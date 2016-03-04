@@ -71,6 +71,12 @@ public:
     //! all prior producers have published their slots.
     void publish(const Range& range);
 
+    //! Returns the range of slots which can be consumed.
+    Range available() const;
+
+    //! Consumes all slots up and including the given \p index.
+    void consumeTo(unsigned index);
+
     //! Returns a pointer to the \p index-th slot.
     void* operator[](unsigned index);
 

@@ -94,6 +94,18 @@ void RingBuffer::publish(const Range& range)
     m_published = range.begin + range.length;
 }
 
+auto RingBuffer::available() const -> Range
+{
+    unsigned consumeStart = m_consumed;
+    int free = m_published - m_consumed;
+    return Range(consumeStart, free > 0 ? free : 0);
+}
+
+void RingBuffer::consumeTo(unsigned index)
+{
+    m_consumed = index + 1;
+}
+
 void* RingBuffer::operator[](unsigned index)
 {
     return static_cast<char*>(m_data) + (index % m_totalNumElements) * m_elementSize;

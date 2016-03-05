@@ -31,6 +31,7 @@
 
 #include <atomic>
 
+
 class Logger
 {
 public:
@@ -39,11 +40,21 @@ public:
 
     void log(const char* message);
 
+    template <typename TArg, typename... TArgs>
+    void log(const char* format, TArg&& arg, TArgs&&... args);
+
 private:
-    RingBuffer m_buffer;
+    RingBuffer m_messageFifo;
     std::atomic_bool m_stop;
 
     void doLog();
 };
+
+template <typename TArg, typename... TArgs>
+void Logger::log(const char* format, TArg&& arg, TArgs&&... args)
+{
+    // TODO: handle arguments
+    log(format);
+}
 
 #endif // LOG11_LOGGER_HPP

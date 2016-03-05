@@ -26,11 +26,26 @@
 
 #include "logger.hpp"
 
+#include <chrono>
+#include <cstdint>
 #include <thread>
 
 
+struct LogStatement
+{
+    LogStatement(const char* msg)
+        : m_timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
+          m_message(msg)
+    {
+    }
+
+    std::int64_t m_timeStamp;
+    const char* m_message;
+};
+
+
 Logger::Logger()
-    : m_buffer(16, 100),
+    : m_messageFifo(16, 100),
       m_stop(false)
 {
     std::thread(&Logger::doLog, this).detach();
@@ -43,15 +58,38 @@ Logger::~Logger()
 
 void Logger::log(const char* message)
 {
-    auto claimed = m_buffer.claim(1);
-    new (m_buffer[claimed.begin]) (const char*)(message);
-    m_buffer.publish(claimed);
+    auto claimed = m_messageFifo.claim(1);
+    new (m_messageFifo[claimed.begin]) LogStatement(message);
+    m_messageFifo.publish(claimed);
 }
+
 
 void Logger::doLog()
 {
+    using namespace std::chrono;
+
     while (!m_stop)
     {
+        // TODO: add a condition variable here
 
+        auto available = m_messageFifo.available();
+        if (available.length == 0)
+            continue;
+
+        auto stmt = static_cast<LogStatement*>(m_messageFifo[available.begin]);
+
+        auto t = duration_cast<microseconds>(
+                                high_resolution_clock::duration(stmt->m_timeStamp)).count();
+
+        auto secs = t / 1000000;
+        auto mins = secs / 60;
+        auto hours = mins / 60;
+        auto days = hours / 24;
+
+        printf("[%4d %02d:%02d:%02d.%06d] %s\n", int(days), int(hours % 24), int(mins % 60), int(secs % 60),
+               int(t % 1000000),
+               stmt->m_message);
+
+        m_messageFifo.consumeTo(available.begin);
     }
 }

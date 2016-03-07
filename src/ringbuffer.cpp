@@ -102,9 +102,18 @@ void RingBuffer::publish(const Range& range)
 
 auto RingBuffer::available() const noexcept -> Range
 {
-    unsigned consumeStart = m_consumed;
     int free = m_published - m_consumed;
-    return Range(consumeStart, free > 0 ? free * m_elementSize : 0);
+    while (free <= 0)
+    {
+        // Wait until a producer has made progress.
+        std::mutex dummy;
+        std::unique_lock<std::mutex> dummyLock(dummy);
+        m_progressSignal.wait(dummyLock, [&] () -> bool {
+            free = m_published - m_consumed;
+            return free > 0;
+        });
+    }
+    return Range(m_consumed, free);
 }
 
 void RingBuffer::consume(unsigned numEntries) noexcept
@@ -136,7 +145,7 @@ auto RingBuffer::byteRange(const Range& range) const noexcept -> ByteRange
     return ByteRange(begin, range.length * m_elementSize);
 }
 
-auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) -> ByteRange
+auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) const -> ByteRange
 {
     if (size > range.length)
         size = range.length;
@@ -158,7 +167,7 @@ auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) -> Byte
                      range.length - size);
 }
 
-auto RingBuffer::write(void* source, const ByteRange& range, unsigned size) -> ByteRange
+auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size) -> ByteRange
 {
     if (size > range.length)
         size = range.length;

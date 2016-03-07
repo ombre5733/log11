@@ -99,9 +99,9 @@ public:
 
     ByteRange byteRange(const Range& range) const noexcept;
 
-    ByteRange read(const ByteRange& range, void* dest, unsigned size);
+    ByteRange read(const ByteRange& range, void* dest, unsigned size) const;
 
-    ByteRange write(void* source, const ByteRange& range, unsigned size);
+    ByteRange write(const void* source, const ByteRange& range, unsigned size);
 
 private:
     //! The ring buffer's data.

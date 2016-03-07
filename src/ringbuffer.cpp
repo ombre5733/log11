@@ -27,6 +27,7 @@
 #include "ringbuffer.hpp"
 
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 
@@ -94,19 +95,81 @@ void RingBuffer::publish(const Range& range)
     m_published = range.begin + range.length;
 }
 
-auto RingBuffer::available() const -> Range
+auto RingBuffer::available() const noexcept -> Range
 {
     unsigned consumeStart = m_consumed;
     int free = m_published - m_consumed;
-    return Range(consumeStart, free > 0 ? free : 0);
+    return Range(consumeStart, free > 0 ? free * m_elementSize : 0);
 }
 
-void RingBuffer::consumeTo(unsigned index)
+void RingBuffer::consumeTo(unsigned index) noexcept
 {
     m_consumed = index + 1;
 }
 
-void* RingBuffer::operator[](unsigned index)
+
+void* RingBuffer::begin() noexcept
+{
+    return m_data;
+}
+
+void* RingBuffer::end() noexcept
+{
+    return static_cast<char*>(m_data) + m_totalNumElements * m_elementSize;
+}
+
+void* RingBuffer::operator[](unsigned index) noexcept
 {
     return static_cast<char*>(m_data) + (index % m_totalNumElements) * m_elementSize;
+}
+
+
+auto RingBuffer::byteRange(const Range& range) const noexcept -> ByteRange
+{
+    unsigned begin = (range.begin % m_totalNumElements) * m_elementSize;
+    return ByteRange(begin, range.length * m_elementSize);
+}
+
+auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) -> ByteRange
+{
+    if (size > range.length)
+        size = range.length;
+    if (!size)
+        return range;
+
+    unsigned restSize = m_totalNumElements * m_elementSize - range.begin;
+    if (size <= restSize)
+    {
+        std::memcpy(dest, static_cast<const char*>(m_data) + range.begin, size);
+    }
+    else
+    {
+        std::memcpy(dest, static_cast<const char*>(m_data) + range.begin, size);
+        std::memcpy(static_cast<char*>(dest) + restSize, m_data, size - restSize);
+    }
+
+    return ByteRange((range.begin + size) % (m_totalNumElements * m_elementSize),
+                     range.length - size);
+}
+
+auto RingBuffer::write(void* source, const ByteRange& range, unsigned size) -> ByteRange
+{
+    if (size > range.length)
+        size = range.length;
+    if (!size)
+        return range;
+
+    unsigned restSize = m_totalNumElements * m_elementSize - range.begin;
+    if (size <= restSize)
+    {
+        std::memcpy(static_cast<char*>(m_data) + range.begin, source, size);
+    }
+    else
+    {
+        std::memcpy(static_cast<char*>(m_data) + range.begin, source, restSize);
+        std::memcpy(m_data, static_cast<const char*>(source) + restSize, size - restSize);
+    }
+
+    return ByteRange((range.begin + size) % (m_totalNumElements * m_elementSize),
+                     range.length - size);
 }

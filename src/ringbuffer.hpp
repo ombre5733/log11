@@ -34,7 +34,18 @@ class RingBuffer
 public:
     struct Range
     {
-        Range(unsigned b, unsigned l)
+        Range(unsigned b, unsigned l) noexcept
+            : begin(b), length(l)
+        {
+        }
+
+        unsigned begin;
+        unsigned length;
+    };
+
+    struct ByteRange
+    {
+        ByteRange(unsigned b, unsigned l)
             : begin(b), length(l)
         {
         }
@@ -72,13 +83,23 @@ public:
     void publish(const Range& range);
 
     //! Returns the range of slots which can be consumed.
-    Range available() const;
+    Range available() const noexcept;
 
     //! Consumes all slots up and including the given \p index.
-    void consumeTo(unsigned index);
+    void consumeTo(unsigned index) noexcept;
+
+
+    void* begin() noexcept;
+    void* end() noexcept;
 
     //! Returns a pointer to the \p index-th slot.
-    void* operator[](unsigned index);
+    void* operator[](unsigned index) noexcept;
+
+    ByteRange byteRange(const Range& range) const noexcept;
+
+    ByteRange read(const ByteRange& range, void* dest, unsigned size);
+
+    ByteRange write(void* source, const ByteRange& range, unsigned size);
 
 private:
     void* m_data;

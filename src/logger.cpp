@@ -48,7 +48,7 @@ Logger::Logger()
     : m_messageFifo(16, 100),
       m_stop(false)
 {
-    std::thread(&Logger::doLog, this).detach();
+    std::thread(&Logger::consumeFifoEntries, this).detach();
 }
 
 Logger::~Logger()
@@ -64,7 +64,7 @@ void Logger::log(const char* message)
 }
 
 
-void Logger::doLog()
+void Logger::consumeFifoEntries()
 {
     using namespace std::chrono;
 

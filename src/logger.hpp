@@ -47,7 +47,7 @@ private:
     RingBuffer m_messageFifo;
     std::atomic_bool m_stop;
 
-    void doLog();
+    void consumeFifoEntries();
 };
 
 template <typename TArg, typename... TArgs>

@@ -107,9 +107,9 @@ auto RingBuffer::available() const noexcept -> Range
     return Range(consumeStart, free > 0 ? free * m_elementSize : 0);
 }
 
-void RingBuffer::consumeTo(unsigned index) noexcept
+void RingBuffer::consume(unsigned numEntries) noexcept
 {
-    m_consumed = index + 1;
+    m_consumed += numEntries;
     m_progressSignal.notify_all();
 }
 

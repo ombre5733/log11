@@ -87,8 +87,8 @@ public:
     //! Returns the range of slots which can be consumed.
     Range available() const noexcept;
 
-    //! Consumes all slots up and including the given \p index.
-    void consumeTo(unsigned index) noexcept;
+    //! Consumes \p numEntries slots.
+    void consume(unsigned numEntries) noexcept;
 
 
     void* begin() noexcept;

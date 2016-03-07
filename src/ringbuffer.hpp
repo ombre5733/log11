@@ -28,6 +28,8 @@
 #define LOG11_RINGBUFFER_HPP
 
 #include <atomic>
+#include <condition_variable>
+
 
 class RingBuffer
 {
@@ -102,9 +104,11 @@ public:
     ByteRange write(void* source, const ByteRange& range, unsigned size);
 
 private:
+    //! The ring buffer's data.
     void* m_data;
     //! The size of one slot in the buffer.
     unsigned m_elementSize;
+    //! The total number of elements in the buffer.
     unsigned m_totalNumElements;
 
     //! Points past the last claimed slot.
@@ -113,6 +117,9 @@ private:
     std::atomic<unsigned> m_published;
     //! Points past the last consumed slot.
     std::atomic<unsigned> m_consumed;
+
+    //! A signal which indicates progress in the producers or consumer.
+    mutable std::condition_variable m_progressSignal;
 };
 
 #endif // LOG11_RINGBUFFER_HPP

@@ -52,13 +52,15 @@ auto RingBuffer::claim(unsigned numElements) -> Range
 
     // Claim a sequence of elements.
     unsigned claimEnd = m_claimed += numElements;
-    // Check if the claimed elements have been consumed already.
+    // Wait until the claimed elements are free.
     unsigned consumerThreshold = claimEnd - m_totalNumElements;
-    while (int(consumerThreshold - m_consumed) > 0)
+    while (int(m_consumed - consumerThreshold) <= 0)
     {
         // Wait until the consumer has made progress.
-        // TODO: Implement a better strategy.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // TODO: Make this faster.
+        std::mutex dummy;
+        std::unique_lock<std::mutex> dummyLock(dummy);
+        m_progressSignal.wait(dummyLock, [&] { return int(m_consumed - consumerThreshold) > 0; });
     }
 
     return Range(claimEnd - numElements, numElements);
@@ -88,11 +90,14 @@ void RingBuffer::publish(const Range& range)
     if (m_published != range.begin)
     {
         // Wait until the other producers have made progress.
-        // TODO: Implement a better strategy.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // TODO: Make this faster.
+        std::mutex dummy;
+        std::unique_lock<std::mutex> dummyLock(dummy);
+        m_progressSignal.wait(dummyLock, [&] { return m_published == range.begin; });
     }
 
     m_published = range.begin + range.length;
+    m_progressSignal.notify_all();
 }
 
 auto RingBuffer::available() const noexcept -> Range
@@ -105,6 +110,7 @@ auto RingBuffer::available() const noexcept -> Range
 void RingBuffer::consumeTo(unsigned index) noexcept
 {
     m_consumed = index + 1;
+    m_progressSignal.notify_all();
 }
 
 

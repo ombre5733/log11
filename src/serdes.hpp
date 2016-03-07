@@ -44,6 +44,7 @@ public:
 
     virtual void visit(int value) = 0;
     virtual void visit(float value) = 0;
+    virtual void visit(const void* value) = 0;
 };
 
 class SerdesBase
@@ -65,7 +66,7 @@ class Serdes : public SerdesBase
 {
 public:
     static
-    SerdesBase* instance()
+    Serdes* instance()
     {
         static Serdes serdes;
         return &serdes;
@@ -77,12 +78,11 @@ public:
         return doRequiredSize(args...);
     }
 
-    template <typename... TArgs>
     static
     void serialize(RingBuffer& buffer, RingBuffer::ByteRange range,
-                   TArgs&&... args)
+                   const T&... args)
     {
-        doSerialize(buffer, range, std::forward<TArgs&&>(args)...);
+        doSerialize(buffer, range, args...);
     }
 
     virtual
@@ -116,10 +116,10 @@ private:
     template <typename TArg, typename... TArgs>
     static
     void doSerialize(RingBuffer& buffer, RingBuffer::ByteRange range,
-                     TArg&& arg, TArgs&&... args)
+                     const TArg& arg, const TArgs&... args)
     {
-        range = buffer.write((TArg*)&arg, range, sizeof(TArg));
-        doSerialize(buffer, range, std::forward<TArgs&&>(args)...);
+        range = buffer.write(&arg, range, sizeof(TArg));
+        doSerialize(buffer, range, args...);
     }
 
     static

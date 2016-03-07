@@ -67,15 +67,14 @@ public:
     static
     SerdesBase* instance()
     {
-        Serdes serdes;
+        static Serdes serdes;
         return &serdes;
     }
 
-    template <typename... TArgs>
     static
-    std::size_t requiredSize(TArgs&&... args)
+    std::size_t requiredSize(const T&... args)
     {
-        return doRequiredSize(std::forward<TArgs&&>(args)...);
+        return doRequiredSize(args...);
     }
 
     template <typename... TArgs>
@@ -103,9 +102,9 @@ public:
 private:
     template <typename TArg, typename... TArgs>
     static
-    std::size_t doRequiredSize(TArg&& arg, TArgs&&... args)
+    std::size_t doRequiredSize(const TArg& arg, const TArgs&... args)
     {
-        return sizeof(arg) + doRequiredSize(std::forward<TArgs&&>(args)...);
+        return sizeof(arg) + doRequiredSize(args...);
     }
 
     static

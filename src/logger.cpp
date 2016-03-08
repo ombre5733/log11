@@ -25,28 +25,77 @@
 *******************************************************************************/
 
 #include "logger.hpp"
+#include "sink.hpp"
 
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <thread>
 
 
-struct LogStatement
+#include <iostream>
+using namespace std;
+
+class Converter : public Visitor
 {
-    LogStatement(const char* msg)
-        : m_timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
-          m_message(msg)
+public:
+    Converter(Logger& logger)
+        : m_logger(logger)
     {
     }
 
-    std::int64_t m_timeStamp;
-    const char* m_message;
+    virtual
+    void visit(int value) override
+    {
+        Sink* sink = m_logger.m_sink;
+        if (sink)
+        {
+            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                                   "%d", value);
+            sink->putString(m_logger.m_conversionBuffer, length);
+        }
+    }
+
+    virtual
+    void visit(float value) override
+    {
+        Sink* sink = m_logger.m_sink;
+        if (sink)
+        {
+            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                                   "%f", value);
+            sink->putString(m_logger.m_conversionBuffer, length);
+        }
+    }
+
+    virtual
+    void visit(const void* value) override
+    {
+        Sink* sink = m_logger.m_sink;
+        if (sink)
+        {
+            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                                   "0x%08x", uintptr_t(value));
+            sink->putString(m_logger.m_conversionBuffer, length);
+        }
+    }
+
+private:
+    Logger& m_logger;
 };
 
+LogStatement::LogStatement(const char* msg)
+    : m_timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
+      m_message(msg),
+      m_extensionSize(0),
+      m_extensionType(0)
+{
+}
 
 Logger::Logger()
     : m_messageFifo(16, 100),
-      m_stop(false)
+      m_stop(false),
+      m_sink{nullptr}
 {
     std::thread(&Logger::consumeFifoEntries, this).detach();
 }
@@ -54,6 +103,16 @@ Logger::Logger()
 Logger::~Logger()
 {
     m_stop = true;
+    // Signal the consumer thread.
+    auto claimed = m_messageFifo.claim(1);
+    new (m_messageFifo[claimed.begin]) LogStatement(nullptr);
+    m_messageFifo.publish(claimed);
+    cout << "<STOP>" << endl;
+}
+
+void Logger::setSink(Sink* sink)
+{
+    m_sink = sink;
 }
 
 void Logger::log(const char* message)
@@ -63,33 +122,97 @@ void Logger::log(const char* message)
     m_messageFifo.publish(claimed);
 }
 
-
 void Logger::consumeFifoEntries()
 {
     using namespace std::chrono;
 
+    Converter converter(*this);
+
     while (!m_stop)
     {
-        // TODO: add a condition variable here
-
         auto available = m_messageFifo.available();
-        if (available.length == 0)
-            continue;
+        while (!m_stop && available.length)
+        {
+            cout << "Available: (" << available.begin << ", " << available.length << ")" << endl;
+            // If no sink is attached to the logger, consume all FIFO entries.
+            Sink* sink = m_sink;
+            if (!sink)
+            {
+                m_messageFifo.consume(available.length);
+                break;
+            }
 
-        auto stmt = static_cast<LogStatement*>(m_messageFifo[available.begin]);
+            auto stmt = static_cast<LogStatement*>(m_messageFifo[available.begin]);
+            if (!stmt->m_message)
+                return;
 
-        auto t = duration_cast<microseconds>(
-                                high_resolution_clock::duration(stmt->m_timeStamp)).count();
+            auto t = duration_cast<microseconds>(
+                         high_resolution_clock::duration(stmt->m_timeStamp)).count();
 
-        auto secs = t / 1000000;
-        auto mins = secs / 60;
-        auto hours = mins / 60;
-        auto days = hours / 24;
+            auto secs = t / 1000000;
+            auto mins = secs / 60;
+            auto hours = mins / 60;
+            auto days = hours / 24;
 
-        printf("[%4d %02d:%02d:%02d.%06d] %s\n", int(days), int(hours % 24), int(mins % 60), int(secs % 60),
-               int(t % 1000000),
-               stmt->m_message);
+            if (stmt->m_extensionType == 0)
+            {
+                printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
+                sink->putString(stmt->m_message, std::strlen(stmt->m_message));
+                sink->putChar('\n');
 
-        m_messageFifo.consumeTo(available.begin);
+                cout << "Done with 0" << endl;
+                ++available.begin;
+                --available.length;
+                m_messageFifo.consume(1);
+            }
+            else
+            {
+                printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
+
+                unsigned extensionLength = (stmt->m_extensionSize + sizeof(LogStatement) - 1)
+                                          / sizeof(LogStatement);
+                SerdesBase* serdes = *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1]);
+                auto byteRange = m_messageFifo.byteRange(
+                                     RingBuffer::Range(available.begin + 1, extensionLength));
+
+                // Interpret the format string.
+                unsigned argCounter = 0;
+                const char* firstChar = stmt->m_message;
+                const char* iter = firstChar;
+                for (; *iter; ++iter)
+                {
+                    if (*iter == '{')
+                    {
+                        if (iter != firstChar)
+                            sink->putString(firstChar, iter - firstChar);
+
+                        firstChar = iter;
+                        while (*iter && *iter != '}')
+                            ++iter;
+                        if (!*iter++)
+                        {
+                            firstChar = iter;
+                            break;
+                        }
+
+                        ++argCounter;
+                        if (argCounter < serdes->numArguments())
+                            serdes->apply(m_messageFifo, byteRange, argCounter, converter);
+                        else
+                            sink->putString("?!", 2);
+
+                        firstChar = iter;
+                    }
+                }
+                if (iter != firstChar)
+                    sink->putString(firstChar, iter - firstChar);
+
+                sink->putChar('\n');
+
+                available.begin += 1 + extensionLength;
+                available.length -= 1 + extensionLength;
+                m_messageFifo.consume(1 + extensionLength);
+            }
+        }
     }
 }

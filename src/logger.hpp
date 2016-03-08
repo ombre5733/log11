@@ -28,15 +28,34 @@
 #define LOG11_LOGGER_HPP
 
 #include "ringbuffer.hpp"
+#include "serdes.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <new>
+#include <type_traits>
 
+
+class Sink;
+
+struct LogStatement
+{
+    LogStatement(const char* msg);
+
+    std::int64_t m_timeStamp;
+    const char* m_message;
+    unsigned m_extensionSize : 16;
+    unsigned m_extensionType : 2;
+};
 
 class Logger
 {
 public:
     Logger();
     ~Logger();
+
+    void setSink(Sink* sink);
 
     void log(const char* message);
 
@@ -46,15 +65,31 @@ public:
 private:
     RingBuffer m_messageFifo;
     std::atomic_bool m_stop;
+    std::atomic<Sink*> m_sink;
+
+    char m_conversionBuffer[32];
 
     void consumeFifoEntries();
+
+    friend class Converter;
 };
 
 template <typename TArg, typename... TArgs>
 void Logger::log(const char* format, TArg&& arg, TArgs&&... args)
 {
-    // TODO: handle arguments
-    log(format);
+    auto serdes = Serdes<void*, typename std::decay<TArg>::type,
+                         typename std::decay<TArgs>::type...>::instance();
+    auto argSize = serdes->requiredSize(nullptr, arg, args...);
+
+    auto claimed = m_messageFifo.claim(
+                       1 + (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement));
+    auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(format);
+    stmt->m_extensionType = 1;
+    stmt->m_extensionSize = argSize;
+    serdes->serialize(m_messageFifo,
+                      m_messageFifo.byteRange(RingBuffer::Range(claimed.begin + 1, claimed.length - 1)),
+                      serdes, arg, args...);
+    m_messageFifo.publish(claimed);
 }
 
 #endif // LOG11_LOGGER_HPP

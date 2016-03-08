@@ -123,16 +123,6 @@ void RingBuffer::consume(unsigned numEntries) noexcept
 }
 
 
-void* RingBuffer::begin() noexcept
-{
-    return m_data;
-}
-
-void* RingBuffer::end() noexcept
-{
-    return static_cast<char*>(m_data) + m_totalNumElements * m_elementSize;
-}
-
 void* RingBuffer::operator[](unsigned index) noexcept
 {
     return static_cast<char*>(m_data) + (index % m_totalNumElements) * m_elementSize;

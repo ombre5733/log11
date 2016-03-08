@@ -91,9 +91,6 @@ public:
     void consume(unsigned numEntries) noexcept;
 
 
-    void* begin() noexcept;
-    void* end() noexcept;
-
     //! Returns a pointer to the \p index-th slot.
     void* operator[](unsigned index) noexcept;
 

@@ -46,6 +46,8 @@
 #include <cstdint>
 #include <new>
 
+namespace log11
+{
 
 class Sink;
 
@@ -102,5 +104,7 @@ void Logger::log(const char* format, TArg&& arg, TArgs&&... args)
                       serdes, arg, args...);
     m_messageFifo.publish(claimed);
 }
+
+} // namespace log11
 
 #endif // LOG11_LOGGER_HPP

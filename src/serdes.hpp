@@ -32,6 +32,8 @@
 #include <cstddef>
 #include <utility>
 
+namespace log11
+{
 
 template <typename... T>
 struct TypeList {};
@@ -174,5 +176,7 @@ public:
                 : (void)0;
     }
 };
+
+} // namespace log11
 
 #endif // LOG11_SERDES_HPP

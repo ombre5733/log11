@@ -37,6 +37,9 @@
 #endif // LOG11_USE_WEOS
 
 
+namespace log11
+{
+
 class Converter : public Visitor
 {
 public:
@@ -239,3 +242,5 @@ void Logger::printHeader(LogStatement* stmt)
 
     printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
 }
+
+} // namespace log11

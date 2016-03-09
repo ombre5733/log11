@@ -29,6 +29,8 @@
 #include <cstring>
 
 
+using namespace log11;
+
 RingBuffer::RingBuffer(unsigned elementSize, unsigned size)
     : m_elementSize(elementSize),
       m_totalNumElements((size + elementSize - 1) / elementSize),

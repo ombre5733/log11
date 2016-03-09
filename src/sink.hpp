@@ -30,6 +30,9 @@
 #include <cstddef>
 
 
+namespace log11
+{
+
 //! A logger sink.
 //!
 //! The Sink is the backend of a logger. Its responsibility is to output
@@ -56,6 +59,8 @@ public:
             putChar(*text++);
     }
 };
+
+} // namespace log11
 
 #endif // LOG11_SINK_HPP
 

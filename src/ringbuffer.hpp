@@ -38,6 +38,9 @@
 #endif // LOG11_USE_WEOS
 
 
+namespace log11
+{
+
 class RingBuffer
 {
 public:
@@ -125,5 +128,7 @@ private:
     //! A signal which indicates progress in the producers or consumer.
     mutable LOG11_STD::condition_variable m_progressSignal;
 };
+
+} // namespace log11
 
 #endif // LOG11_RINGBUFFER_HPP

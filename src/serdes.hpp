@@ -59,47 +59,8 @@ public:
     virtual
     void apply(RingBuffer& buffer, RingBuffer::ByteRange range,
                std::size_t index, Visitor& visitor) = 0;
-};
 
-template <typename... T>
-class Serdes : public SerdesBase
-{
-public:
-    static
-    Serdes* instance()
-    {
-        static Serdes serdes;
-        return &serdes;
-    }
-
-    static
-    std::size_t requiredSize(const T&... args)
-    {
-        return doRequiredSize(args...);
-    }
-
-    static
-    void serialize(RingBuffer& buffer, RingBuffer::ByteRange range,
-                   const T&... args)
-    {
-        doSerialize(buffer, range, args...);
-    }
-
-    virtual
-    std::size_t numArguments() const noexcept override
-    {
-        return sizeof...(T);
-    }
-
-    virtual
-    void apply(RingBuffer& buffer, RingBuffer::ByteRange range,
-               std::size_t index, Visitor& visitor) override
-    {
-        return index < numArguments() ? doApply(TypeList<T...>(), buffer, range, index, visitor)
-                                      : (void)0;
-    }
-
-private:
+protected:
     template <typename TArg, typename... TArgs>
     static
     std::size_t doRequiredSize(const TArg& arg, const TArgs&... args)
@@ -170,6 +131,46 @@ private:
         return RingBuffer::ByteRange(
                     range.begin + sizeof(TType),
                     range.length > sizeof(TType) ? range.length - sizeof(TType) : 0);
+    }
+};
+
+template <typename... T>
+class Serdes : public SerdesBase
+{
+public:
+    static
+    Serdes* instance()
+    {
+        static Serdes serdes;
+        return &serdes;
+    }
+
+    static
+    std::size_t requiredSize(const T&... args)
+    {
+        return SerdesBase::doRequiredSize(args...);
+    }
+
+    static
+    void serialize(RingBuffer& buffer, RingBuffer::ByteRange range,
+                   const T&... args)
+    {
+        SerdesBase::doSerialize(buffer, range, args...);
+    }
+
+    virtual
+    std::size_t numArguments() const noexcept override
+    {
+        return sizeof...(T);
+    }
+
+    virtual
+    void apply(RingBuffer& buffer, RingBuffer::ByteRange range,
+               std::size_t index, Visitor& visitor) override
+    {
+        return index < numArguments()
+                ? SerdesBase::doApply(TypeList<T...>(), buffer, range, index, visitor)
+                : (void)0;
     }
 };
 

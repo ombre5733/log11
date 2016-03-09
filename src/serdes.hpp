@@ -45,6 +45,7 @@ public:
     virtual void visit(int value) = 0;
     virtual void visit(float value) = 0;
     virtual void visit(const void* value) = 0;
+    virtual void visit(const char* value) = 0;
 };
 
 class SerdesBase

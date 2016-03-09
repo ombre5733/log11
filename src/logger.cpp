@@ -81,6 +81,14 @@ public:
         }
     }
 
+    virtual
+    void visit(const char* value) override
+    {
+        Sink* sink = m_logger.m_sink;
+        if (sink)
+            sink->putString(value, std::strlen(value));
+    }
+
 private:
     Logger& m_logger;
 };

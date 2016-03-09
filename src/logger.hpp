@@ -74,9 +74,17 @@ struct LogStatement
 class Logger
 {
 public:
+#ifdef LOG11_USE_WEOS
+    Logger(const weos::thread_attributes& attrs)
+#else
     Logger();
+#endif // LOG11_USE_WEOS
+
+    //! Destroys the logger.
     ~Logger();
 
+    //! Sets the \p severity filter.
+    void setSeverityThreshold(Severity severity);
     void setSink(Sink* sink);
 
     void log(Severity severity, const char* message);
@@ -88,6 +96,7 @@ private:
     RingBuffer m_messageFifo;
     LOG11_STD::atomic_bool m_stop;
     LOG11_STD::atomic<Sink*> m_sink;
+    LOG11_STD::atomic<Severity> m_severityThreshold;
 
     char m_conversionBuffer[32];
 
@@ -101,6 +110,9 @@ template <typename TArg, typename... TArgs>
 void Logger::log(Severity severity, const char* format,
                  TArg&& arg, TArgs&&... args)
 {
+    if (severity < m_severityThreshold)
+        return;
+
     auto serdes = Serdes<void*, typename LOG11_STD::decay<TArg>::type,
                          typename LOG11_STD::decay<TArgs>::type...>::instance();
     auto argSize = serdes->requiredSize(nullptr, arg, args...);

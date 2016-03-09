@@ -115,7 +115,8 @@ Logger::Logger()
 #endif // LOG11_USE_WEOS
     : m_messageFifo(sizeof(LogStatement), 100),
       m_stop(false),
-      m_sink{nullptr}
+      m_sink{nullptr},
+      m_severityThreshold{Severity::Info}
 {
 #ifdef LOG11_USE_WEOS
     weos::thread(attrs, &Logger::consumeFifoEntries, this).detach();
@@ -133,6 +134,11 @@ Logger::~Logger()
     m_messageFifo.publish(claimed);
 }
 
+void Logger::setSeverityThreshold(Severity severity)
+{
+    m_severityThreshold = severity;
+}
+
 void Logger::setSink(Sink* sink)
 {
     m_sink = sink;
@@ -140,6 +146,9 @@ void Logger::setSink(Sink* sink)
 
 void Logger::log(Severity severity, const char* message)
 {
+    if (severity < m_severityThreshold)
+        return;
+
     auto claimed = m_messageFifo.claim(1);
     new (m_messageFifo[claimed.begin]) LogStatement(severity, message);
     m_messageFifo.publish(claimed);

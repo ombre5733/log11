@@ -37,6 +37,8 @@
 #endif // LOG11_USE_WEOS
 
 
+using namespace std;
+
 namespace log11
 {
 
@@ -249,8 +251,10 @@ void Logger::printHeader(LogStatement* stmt)
     auto hours = mins / 60;
     auto days = hours / 24;
 
-    printf("[%4d %02d:%02d:%02d.%06d %s] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000),
-           severity_texts[stmt->m_severity]);
+    auto length = snprintf(m_conversionBuffer, sizeof(m_conversionBuffer),
+                           "[%4d %02d:%02d:%02d.%06d %s] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000),
+                           severity_texts[stmt->m_severity]);
+    sink->putString(m_conversionBuffer, length);
 }
 
 } // namespace log11

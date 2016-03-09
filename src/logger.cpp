@@ -227,6 +227,37 @@ void Logger::consumeFifoEntries()
     }
 }
 
+
+int numDecimalDigits(uint64_t x)
+{
+    unsigned digits = 1;
+    while (true)
+    {
+        if (x < 10)
+            return digits;
+        if (x < 100)
+            return digits + 1;
+        if (x < 1000)
+            return digits + 2;
+        if (x < 10000)
+            return digits + 3;
+        x /= 10000;
+        digits += 4;
+    }
+    return digits;
+}
+
+template <typename T>
+void printDecimal(T x, char* buffer, unsigned numDigits)
+{
+    buffer += numDigits;
+    while (numDigits--)
+    {
+        *--buffer = static_cast<char>('0' + (x % 10));
+        x /= 10;
+    }
+}
+
 void Logger::printHeader(LogStatement* stmt)
 {
     static const char* severity_texts[] = {
@@ -249,12 +280,23 @@ void Logger::printHeader(LogStatement* stmt)
     auto secs = t / 1000000;
     auto mins = secs / 60;
     auto hours = mins / 60;
-    auto days = hours / 24;
+    unsigned days = (hours / 24) % 10000;
 
-    auto length = snprintf(m_conversionBuffer, sizeof(m_conversionBuffer),
-                           "[%4d %02d:%02d:%02d.%06d %s] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000),
-                           severity_texts[stmt->m_severity]);
-    sink->putString(m_conversionBuffer, length);
+    memset(m_conversionBuffer, ' ', 29);
+    m_conversionBuffer[0] = '[';
+    m_conversionBuffer[27] = ']';
+    m_conversionBuffer[8] = ':';
+    m_conversionBuffer[11] = ':';
+    m_conversionBuffer[14] = '.';
+    auto digits = numDecimalDigits(days);
+    printDecimal(days, m_conversionBuffer + 5 - digits, digits);
+    printDecimal(unsigned(hours % 24), m_conversionBuffer + 6, 2);
+    printDecimal(unsigned(mins % 60), m_conversionBuffer + 9, 2);
+    printDecimal(unsigned(secs % 60), m_conversionBuffer + 12, 2);
+    printDecimal(unsigned(t % 1000000), m_conversionBuffer + 15, 6);
+    memcpy(m_conversionBuffer + 22, severity_texts[stmt->m_severity], 5);
+
+    sink->putString(m_conversionBuffer, 29);
 }
 
 } // namespace log11

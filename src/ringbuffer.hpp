@@ -27,8 +27,15 @@
 #ifndef LOG11_RINGBUFFER_HPP
 #define LOG11_RINGBUFFER_HPP
 
+#include "config.hpp"
+
+#ifdef LOG11_USE_WEOS
+#include <weos/atomic.hpp>
+#include <weos/condition_variable.hpp>
+#else
 #include <atomic>
 #include <condition_variable>
+#endif // LOG11_USE_WEOS
 
 
 class RingBuffer
@@ -109,14 +116,14 @@ private:
     unsigned m_totalNumElements;
 
     //! Points past the last claimed slot.
-    std::atomic<unsigned> m_claimed;
+    LOG11_STD::atomic<unsigned> m_claimed;
     //! Points past the last published slot.
-    std::atomic<unsigned> m_published;
+    LOG11_STD::atomic<unsigned> m_published;
     //! Points past the last consumed slot.
-    std::atomic<unsigned> m_consumed;
+    LOG11_STD::atomic<unsigned> m_consumed;
 
     //! A signal which indicates progress in the producers or consumer.
-    mutable std::condition_variable m_progressSignal;
+    mutable LOG11_STD::condition_variable m_progressSignal;
 };
 
 #endif // LOG11_RINGBUFFER_HPP

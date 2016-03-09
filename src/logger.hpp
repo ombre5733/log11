@@ -51,14 +51,24 @@ namespace log11
 
 class Sink;
 
+enum class Severity
+{
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error
+};
+
 struct LogStatement
 {
-    LogStatement(const char* msg);
+    LogStatement(Severity severity, const char* msg);
 
     std::int64_t m_timeStamp;
     const char* m_message;
     unsigned m_extensionSize : 16;
     unsigned m_extensionType : 2;
+    unsigned m_severity : 4;
 };
 
 class Logger
@@ -69,10 +79,10 @@ public:
 
     void setSink(Sink* sink);
 
-    void log(const char* message);
+    void log(Severity severity, const char* message);
 
     template <typename TArg, typename... TArgs>
-    void log(const char* format, TArg&& arg, TArgs&&... args);
+    void log(Severity severity, const char* format, TArg&& arg, TArgs&&... args);
 
 private:
     RingBuffer m_messageFifo;
@@ -88,7 +98,8 @@ private:
 };
 
 template <typename TArg, typename... TArgs>
-void Logger::log(const char* format, TArg&& arg, TArgs&&... args)
+void Logger::log(Severity severity, const char* format,
+                 TArg&& arg, TArgs&&... args)
 {
     auto serdes = Serdes<void*, typename LOG11_STD::decay<TArg>::type,
                          typename LOG11_STD::decay<TArgs>::type...>::instance();
@@ -96,7 +107,7 @@ void Logger::log(const char* format, TArg&& arg, TArgs&&... args)
 
     auto claimed = m_messageFifo.claim(
                        1 + (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement));
-    auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(format);
+    auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(severity, format);
     stmt->m_extensionType = 1;
     stmt->m_extensionSize = argSize;
     serdes->serialize(m_messageFifo,

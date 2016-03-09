@@ -96,11 +96,12 @@ private:
     Logger& m_logger;
 };
 
-LogStatement::LogStatement(const char* msg)
+LogStatement::LogStatement(Severity severity, const char* msg)
     : m_timeStamp(LOG11_STD::chrono::high_resolution_clock::now().time_since_epoch().count()),
       m_message(msg),
       m_extensionSize(0),
-      m_extensionType(0)
+      m_extensionType(0),
+      m_severity(static_cast<int>(severity))
 {
 }
 
@@ -126,7 +127,7 @@ Logger::~Logger()
     m_stop = true;
     // Signal the consumer thread.
     auto claimed = m_messageFifo.claim(1);
-    new (m_messageFifo[claimed.begin]) LogStatement(nullptr);
+    new (m_messageFifo[claimed.begin]) LogStatement(Severity::Debug, nullptr);
     m_messageFifo.publish(claimed);
 }
 
@@ -135,10 +136,10 @@ void Logger::setSink(Sink* sink)
     m_sink = sink;
 }
 
-void Logger::log(const char* message)
+void Logger::log(Severity severity, const char* message)
 {
     auto claimed = m_messageFifo.claim(1);
-    new (m_messageFifo[claimed.begin]) LogStatement(message);
+    new (m_messageFifo[claimed.begin]) LogStatement(severity, message);
     m_messageFifo.publish(claimed);
 }
 
@@ -226,6 +227,14 @@ void Logger::consumeFifoEntries()
 
 void Logger::printHeader(LogStatement* stmt)
 {
+    static const char* severity_texts[] = {
+        "TRACE",
+        "DEBUG",
+        "INFO ",
+        "WARN ",
+        "ERROR"
+    };
+
     using namespace LOG11_STD::chrono;
 
     Sink* sink = m_sink;
@@ -240,7 +249,8 @@ void Logger::printHeader(LogStatement* stmt)
     auto hours = mins / 60;
     auto days = hours / 24;
 
-    printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
+    printf("[%4d %02d:%02d:%02d.%06d %s] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000),
+           severity_texts[stmt->m_severity]);
 }
 
 } // namespace log11

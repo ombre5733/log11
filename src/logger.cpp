@@ -133,8 +133,6 @@ void Logger::log(const char* message)
 
 void Logger::consumeFifoEntries()
 {
-    using namespace std::chrono;
-
     Converter converter(*this);
 
     while (!m_stop)
@@ -154,17 +152,10 @@ void Logger::consumeFifoEntries()
             if (!stmt->m_message)
                 return;
 
-            auto t = duration_cast<microseconds>(
-                         high_resolution_clock::duration(stmt->m_timeStamp)).count();
-
-            auto secs = t / 1000000;
-            auto mins = secs / 60;
-            auto hours = mins / 60;
-            auto days = hours / 24;
+            printHeader(stmt);
 
             if (stmt->m_extensionType == 0)
             {
-                printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
                 sink->putString(stmt->m_message, std::strlen(stmt->m_message));
                 sink->putChar('\n');
 
@@ -174,8 +165,6 @@ void Logger::consumeFifoEntries()
             }
             else
             {
-                printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
-
                 unsigned extensionLength = (stmt->m_extensionSize + sizeof(LogStatement) - 1)
                                           / sizeof(LogStatement);
                 SerdesBase* serdes = *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1]);
@@ -222,4 +211,23 @@ void Logger::consumeFifoEntries()
             }
         }
     }
+}
+
+void Logger::printHeader(LogStatement* stmt)
+{
+    using namespace LOG11_STD::chrono;
+
+    Sink* sink = m_sink;
+    if (!sink)
+        return;
+
+    auto t = duration_cast<microseconds>(
+                 high_resolution_clock::duration(stmt->m_timeStamp)).count();
+
+    auto secs = t / 1000000;
+    auto mins = secs / 60;
+    auto hours = mins / 60;
+    auto days = hours / 24;
+
+    printf("[%4d %02d:%02d:%02d.%06d] ", int(days), int(hours % 24), int(mins % 60), int(secs % 60), int(t % 1000000));
 }

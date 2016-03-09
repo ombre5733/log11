@@ -80,6 +80,7 @@ private:
     char m_conversionBuffer[32];
 
     void consumeFifoEntries();
+    void printHeader(LogStatement* stmt);
 
     friend class Converter;
 };

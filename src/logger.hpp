@@ -27,14 +27,24 @@
 #ifndef LOG11_LOGGER_HPP
 #define LOG11_LOGGER_HPP
 
+#include "config.hpp"
 #include "ringbuffer.hpp"
 #include "serdes.hpp"
 
+#ifdef LOG11_USE_WEOS
+#include <weos/atomic.hpp>
+#include <weos/chrono.hpp>
+#include <weos/condition_variable.hpp>
+#include <weos/type_traits.hpp>
+#else
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <type_traits>
+#endif // LOG11_USE_WEOS
+
 #include <cstdint>
 #include <new>
-#include <type_traits>
 
 
 class Sink;
@@ -64,8 +74,8 @@ public:
 
 private:
     RingBuffer m_messageFifo;
-    std::atomic_bool m_stop;
-    std::atomic<Sink*> m_sink;
+    LOG11_STD::atomic_bool m_stop;
+    LOG11_STD::atomic<Sink*> m_sink;
 
     char m_conversionBuffer[32];
 
@@ -77,8 +87,8 @@ private:
 template <typename TArg, typename... TArgs>
 void Logger::log(const char* format, TArg&& arg, TArgs&&... args)
 {
-    auto serdes = Serdes<void*, typename std::decay<TArg>::type,
-                         typename std::decay<TArgs>::type...>::instance();
+    auto serdes = Serdes<void*, typename LOG11_STD::decay<TArg>::type,
+                         typename LOG11_STD::decay<TArgs>::type...>::instance();
     auto argSize = serdes->requiredSize(nullptr, arg, args...);
 
     auto claimed = m_messageFifo.claim(

@@ -27,14 +27,15 @@
 #include "logger.hpp"
 #include "sink.hpp"
 
-#include <chrono>
 #include <cstdint>
 #include <cstring>
+
+#ifdef LOG11_USE_WEOS
+#include <weos/thread.hpp>
+#else
 #include <thread>
+#endif // LOG11_USE_WEOS
 
-
-#include <iostream>
-using namespace std;
 
 class Converter : public Visitor
 {
@@ -85,19 +86,28 @@ private:
 };
 
 LogStatement::LogStatement(const char* msg)
-    : m_timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
+    : m_timeStamp(LOG11_STD::chrono::high_resolution_clock::now().time_since_epoch().count()),
       m_message(msg),
       m_extensionSize(0),
       m_extensionType(0)
 {
 }
 
+
+#ifdef LOG11_USE_WEOS
+Logger::Logger(const weos::thread_attributes& attrs)
+#else
 Logger::Logger()
-    : m_messageFifo(16, 100),
+#endif // LOG11_USE_WEOS
+    : m_messageFifo(sizeof(LogStatement), 100),
       m_stop(false),
       m_sink{nullptr}
 {
+#ifdef LOG11_USE_WEOS
+    weos::thread(attrs, &Logger::consumeFifoEntries, this).detach();
+#else
     std::thread(&Logger::consumeFifoEntries, this).detach();
+#endif // LOG11_USE_WEOS
 }
 
 Logger::~Logger()
@@ -107,7 +117,6 @@ Logger::~Logger()
     auto claimed = m_messageFifo.claim(1);
     new (m_messageFifo[claimed.begin]) LogStatement(nullptr);
     m_messageFifo.publish(claimed);
-    cout << "<STOP>" << endl;
 }
 
 void Logger::setSink(Sink* sink)
@@ -133,7 +142,6 @@ void Logger::consumeFifoEntries()
         auto available = m_messageFifo.available();
         while (!m_stop && available.length)
         {
-            cout << "Available: (" << available.begin << ", " << available.length << ")" << endl;
             // If no sink is attached to the logger, consume all FIFO entries.
             Sink* sink = m_sink;
             if (!sink)
@@ -160,7 +168,6 @@ void Logger::consumeFifoEntries()
                 sink->putString(stmt->m_message, std::strlen(stmt->m_message));
                 sink->putChar('\n');
 
-                cout << "Done with 0" << endl;
                 ++available.begin;
                 --available.length;
                 m_messageFifo.consume(1);

@@ -32,6 +32,13 @@
 #include <cstddef>
 #include <utility>
 
+#ifdef LOG11_USE_WEOS
+#include <weos/type_traits.hpp>
+#else
+#include <type_traits>
+#endif // LOG11_USE_WEOS
+
+
 namespace log11
 {
 namespace log11_detail
@@ -39,6 +46,44 @@ namespace log11_detail
 
 template <typename... T>
 struct TypeList {};
+
+using serializable_types = TypeList<int, float>;
+
+
+template <typename T, typename U>
+struct is_member;
+
+template <typename T, typename TH, typename... TL>
+struct is_member<T, TypeList<TH, TL...>>
+        : LOG11_STD::conditional<LOG11_STD::is_same<T, TH>::value,
+                                 LOG11_STD::true_type,
+                                 is_member<T, TypeList<TL...>>>::type
+{
+};
+
+template <typename T>
+struct is_member<T, TypeList<>> : LOG11_STD::false_type {};
+
+
+
+template <typename T>
+struct is_serializable : is_member<T, serializable_types> {};
+
+template <typename T>
+struct is_serializable<T*> : LOG11_STD::true_type {};
+
+
+
+template <typename... T>
+struct all : LOG11_STD::true_type {};
+
+template <typename TH, typename... TL>
+struct all<TH, TL...>
+        : LOG11_STD::conditional<TH::value != false, all<TL...>, TH>::type
+{
+};
+
+
 
 class Visitor
 {

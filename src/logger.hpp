@@ -100,6 +100,12 @@ public:
     template <typename... TArgs>
     void log(Severity severity, const char* message, TArgs&&... args)
     {
+        using namespace LOG11_STD;
+        using namespace log11_detail;
+
+        static_assert(all<is_serializable<typename decay<TArgs>::type>...>::value,
+                      "Unsuitable type for string interpolation");
+
         doLog(Block, severity, message, LOG11_STD::forward<TArgs>(args)...);
     }
 

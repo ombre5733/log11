@@ -48,7 +48,8 @@ RingBuffer::~RingBuffer()
 
 auto RingBuffer::claim(unsigned numElements) -> Range
 {
-    // TODO: limit numElements to m_size
+    if (numElements > m_totalNumElements)
+        numElements = m_totalNumElements;
 
     // Claim a sequence of elements.
     unsigned claimEnd = m_claimed += numElements;
@@ -60,7 +61,9 @@ auto RingBuffer::claim(unsigned numElements) -> Range
         // TODO: Make this faster.
         LOG11_STD::mutex dummy;
         LOG11_STD::unique_lock<LOG11_STD::mutex> dummyLock(dummy);
-        m_progressSignal.wait(dummyLock, [&] { return int(m_consumed - consumerThreshold) > 0; });
+        m_progressSignal.wait(dummyLock, [&] {
+            return int(m_consumed - consumerThreshold) > 0;
+        });
     }
 
     return Range(claimEnd - numElements, numElements);
@@ -68,7 +71,8 @@ auto RingBuffer::claim(unsigned numElements) -> Range
 
 auto RingBuffer::tryClaim(unsigned numElements, bool allowTruncation) -> Range
 {
-    // TODO: limit numElements to m_size
+    if (numElements > m_totalNumElements)
+        numElements = m_totalNumElements;
 
     unsigned claimBegin = m_claimed;
     int free;
@@ -93,7 +97,9 @@ void RingBuffer::publish(const Range& range)
         // TODO: Make this faster.
         LOG11_STD::mutex dummy;
         LOG11_STD::unique_lock<LOG11_STD::mutex> dummyLock(dummy);
-        m_progressSignal.wait(dummyLock, [&] { return m_published == range.begin; });
+        m_progressSignal.wait(dummyLock, [&] {
+            return m_published == range.begin;
+        });
     }
 
     m_published = range.begin + range.length;

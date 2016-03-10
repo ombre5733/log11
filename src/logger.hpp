@@ -44,6 +44,7 @@
 #include <type_traits>
 #endif // LOG11_USE_WEOS
 
+#include <cstddef>
 #include <cstdint>
 #include <new>
 
@@ -82,9 +83,9 @@ class Logger
 
 public:
 #ifdef LOG11_USE_WEOS
-    Logger(const weos::thread_attributes& attrs);
+    Logger(const weos::thread_attributes& attrs, std::size_t bufferSize);
 #else
-    Logger();
+    Logger(std::size_t bufferSize);
 #endif // LOG11_USE_WEOS
 
     //! Destroys the logger.
@@ -100,12 +101,6 @@ public:
     template <typename... TArgs>
     void log(Severity severity, const char* message, TArgs&&... args)
     {
-        using namespace LOG11_STD;
-        using namespace log11_detail;
-
-        static_assert(all<is_serializable<typename decay<TArgs>::type>...>::value,
-                      "Unsuitable type for string interpolation");
-
         doLog(Block, severity, message, LOG11_STD::forward<TArgs>(args)...);
     }
 
@@ -135,7 +130,11 @@ template <typename TArg, typename... TArgs>
 void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
                    TArg&& arg, TArgs&&... args)
 {
+    using namespace LOG11_STD;
     using namespace log11_detail;
+
+    static_assert(all<is_serializable<typename decay<TArgs>::type>...>::value,
+                  "Unsuitable type for string interpolation");
 
     if (severity < m_severityThreshold)
         return;
@@ -151,19 +150,19 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
         return;
 
     auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(severity, format);
+    stmt->m_extensionType = 1;
     if (claimed.length > 1)
     {
         if (claimed.length != numSlots)
             argSize = (claimed.length - 1) * sizeof(LogStatement);
-        stmt->m_extensionType = 1;
         stmt->m_extensionSize = argSize;
         serdes->serialize(
                 m_messageFifo,
                 m_messageFifo.byteRange(
                     RingBuffer::Range(claimed.begin + 1, claimed.length - 1)),
                 serdes, arg, args...);
-        m_messageFifo.publish(claimed);
     }
+    m_messageFifo.publish(claimed);
 }
 
 } // namespace log11

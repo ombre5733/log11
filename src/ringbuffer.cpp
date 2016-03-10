@@ -55,14 +55,14 @@ auto RingBuffer::claim(unsigned numElements) -> Range
     unsigned claimEnd = m_claimed += numElements;
     // Wait until the claimed elements are free.
     unsigned consumerThreshold = claimEnd - m_totalNumElements;
-    while (int(m_consumed - consumerThreshold) <= 0)
+    while (int(m_consumed - consumerThreshold) < 0)
     {
         // Wait until the consumer has made progress.
         // TODO: Make this faster.
         LOG11_STD::mutex dummy;
         LOG11_STD::unique_lock<LOG11_STD::mutex> dummyLock(dummy);
         m_progressSignal.wait(dummyLock, [&] {
-            return int(m_consumed - consumerThreshold) > 0;
+            return int(m_consumed - consumerThreshold) >= 0;
         });
     }
 

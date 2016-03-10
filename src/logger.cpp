@@ -198,11 +198,11 @@ LogStatement::LogStatement(Severity severity, const char* msg)
 // ----=====================================================================----
 
 #ifdef LOG11_USE_WEOS
-Logger::Logger(const weos::thread_attributes& attrs)
+Logger::Logger(const weos::thread_attributes& attrs, std::size_t bufferSize)
 #else
-Logger::Logger()
+Logger::Logger(std::size_t bufferSize)
 #endif // LOG11_USE_WEOS
-    : m_messageFifo(sizeof(LogStatement), 10),
+    : m_messageFifo(sizeof(LogStatement), bufferSize),
       m_stop(false),
       m_sink{nullptr},
       m_severityThreshold{Severity::Info}
@@ -282,11 +282,13 @@ void Logger::consumeFifoEntries()
             }
             else
             {
-                unsigned extensionLength = (stmt->m_extensionSize + sizeof(LogStatement) - 1)
+                unsigned extensionSlots = (stmt->m_extensionSize + sizeof(LogStatement) - 1)
                                            / sizeof(LogStatement);
-                SerdesBase* serdes = *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1]);
+                SerdesBase* serdes
+                        = extensionSlots ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1])
+                                         : nullptr;
                 auto byteRange = m_messageFifo.byteRange(
-                                     RingBuffer::Range(available.begin + 1, extensionLength));
+                                     RingBuffer::Range(available.begin + 1, extensionSlots));
 
                 // Interpret the format string.
                 unsigned argCounter = 0;
@@ -309,7 +311,10 @@ void Logger::consumeFifoEntries()
                             break;
                         }
                         ++argCounter;
-                        serdes->apply(m_messageFifo, byteRange, argCounter, converter);
+                        if (serdes)
+                            serdes->apply(m_messageFifo, byteRange, argCounter, converter);
+                        else
+                            converter.outOfBounds();
 
                         beginPos = iter + 1;
                     }
@@ -319,9 +324,9 @@ void Logger::consumeFifoEntries()
 
                 sink->putChar('\n');
 
-                available.begin += 1 + extensionLength;
-                available.length -= 1 + extensionLength;
-                m_messageFifo.consume(1 + extensionLength);
+                available.begin += 1 + extensionSlots;
+                available.length -= 1 + extensionSlots;
+                m_messageFifo.consume(1 + extensionSlots);
             }
 
             sink->endLogEntry();

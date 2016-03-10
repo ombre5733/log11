@@ -50,6 +50,7 @@ public:
     virtual void visit(float value) = 0;
     virtual void visit(const void* value) = 0;
     virtual void visit(const char* value) = 0;
+    virtual void outOfBounds() = 0;
 };
 
 class SerdesBase
@@ -107,6 +108,10 @@ protected:
                               buffer, advance<THead>(buffer, range),
                               argIndex - 1, visitor);
         }
+        else
+        {
+            visitor.outOfBounds();
+        }
     }
 
     static
@@ -126,6 +131,10 @@ protected:
             TType temp;
             buffer.read(range, &temp, sizeof(TType));
             visitor.visit(temp);
+        }
+        else
+        {
+            visitor.outOfBounds();
         }
     }
 
@@ -173,9 +182,10 @@ public:
     void apply(RingBuffer& buffer, RingBuffer::ByteRange range,
                std::size_t index, Visitor& visitor) override
     {
-        return index < numArguments()
-                ? SerdesBase::doApply(TypeList<T...>(), buffer, range, index, visitor)
-                : (void)0;
+        if (index < numArguments())
+            SerdesBase::doApply(TypeList<T...>(), buffer, range, index, visitor);
+        else
+            visitor.outOfBounds();
     }
 };
 

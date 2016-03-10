@@ -99,6 +99,14 @@ public:
             sink->putString(value, std::strlen(value));
     }
 
+    virtual
+    void outOfBounds()
+    {
+        Sink* sink = m_logger.m_sink;
+        if (sink)
+            sink->putString("?!", 2);
+    }
+
 private:
     Logger& m_logger;
 };
@@ -231,12 +239,8 @@ void Logger::consumeFifoEntries()
                             beginPos = iter;
                             break;
                         }
-
                         ++argCounter;
-                        if (argCounter < serdes->numArguments())
-                            serdes->apply(m_messageFifo, byteRange, argCounter, converter);
-                        else
-                            sink->putString("?!", 2);
+                        serdes->apply(m_messageFifo, byteRange, argCounter, converter);
 
                         beginPos = iter + 1;
                     }

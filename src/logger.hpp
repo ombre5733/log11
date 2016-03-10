@@ -36,6 +36,7 @@
 #include <weos/atomic.hpp>
 #include <weos/chrono.hpp>
 #include <weos/condition_variable.hpp>
+#include <weos/thread.hpp>
 #include <weos/type_traits.hpp>
 #else
 #include <atomic>
@@ -133,14 +134,16 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
     using namespace LOG11_STD;
     using namespace log11_detail;
 
-    static_assert(all<is_serializable<typename decay<TArgs>::type>...>::value,
+    static_assert(all_serializable<typename decay<TArg>::type,
+                                   typename decay<TArgs>::type...>::value,
                   "Unsuitable type for string interpolation");
 
     if (severity < m_severityThreshold)
         return;
 
-    auto serdes = Serdes<void*, typename LOG11_STD::decay<TArg>::type,
-                         typename LOG11_STD::decay<TArgs>::type...>::instance();
+    auto serdes = Serdes<void*,
+                         typename decay<TArg>::type,
+                         typename decay<TArgs>::type...>::instance();
     auto argSize = serdes->requiredSize(nullptr, arg, args...);
     auto numSlots = 1 + (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement);
 

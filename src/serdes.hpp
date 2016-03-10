@@ -92,11 +92,13 @@ struct is_serializable<T*> : LOG11_STD::true_type {};
 
 
 template <typename... T>
-struct all : LOG11_STD::true_type {};
+struct all_serializable : LOG11_STD::true_type {};
 
 template <typename TH, typename... TL>
-struct all<TH, TL...>
-        : LOG11_STD::conditional<TH::value != false, all<TL...>, TH>::type
+struct all_serializable<TH, TL...>
+        : LOG11_STD::conditional<is_serializable<TH>::value != false,
+                                 all_serializable<TL...>,
+                                 LOG11_STD::false_type>::type
 {
 };
 

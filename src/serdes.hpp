@@ -164,8 +164,11 @@ protected:
     void doSerialize(RingBuffer& buffer, RingBuffer::ByteRange range,
                      const TArg& arg, const TArgs&... args)
     {
-        range = buffer.write(&arg, range, sizeof(TArg));
-        doSerialize(buffer, range, args...);
+        if (range.length >= sizeof(TArg))
+        {
+            range = buffer.write(&arg, range, sizeof(TArg));
+            doSerialize(buffer, range, args...);
+        }
     }
 
     static
@@ -173,19 +176,27 @@ protected:
     {
     }
 
-    template <typename THead, typename... TTail>
+    template <typename TArg, typename... TArgs>
     static
-    void doApply(TypeList<THead, TTail...>,
+    void doApply(TypeList<TArg, TArgs...>,
                  RingBuffer& buffer, RingBuffer::ByteRange range,
                  std::size_t argIndex, Visitor& visitor)
     {
-        if (range.length)
+        if (range.length >= sizeof(TArg))
         {
-            return argIndex == 0
-                    ? extractAndApply<THead>(buffer, range, visitor)
-                    : doApply(TypeList<TTail...>(),
-                              buffer, advance<THead>(buffer, range),
-                              argIndex - 1, visitor);
+            if (argIndex == 0)
+            {
+                TArg temp;
+                buffer.read(range, &temp, sizeof(TArg));
+                visitor.visit(temp);
+            }
+            else
+            {
+                range.begin += sizeof(TArg);
+                range.length -= sizeof(TArg);
+                doApply(TypeList<TArgs...>(),
+                        buffer, range, argIndex - 1, visitor);
+            }
         }
         else
         {
@@ -198,32 +209,6 @@ protected:
                  RingBuffer& /*buffer*/, const RingBuffer::ByteRange& /*range*/,
                  std::size_t /*argIndex*/, Visitor& /*visitor*/)
     {
-    }
-
-    template <typename TType>
-    static
-    void extractAndApply(RingBuffer& buffer, RingBuffer::ByteRange range,
-                         Visitor& visitor)
-    {
-        if (sizeof(TType) <= range.length)
-        {
-            TType temp;
-            buffer.read(range, &temp, sizeof(TType));
-            visitor.visit(temp);
-        }
-        else
-        {
-            visitor.outOfBounds();
-        }
-    }
-
-    template <typename TType>
-    static
-    RingBuffer::ByteRange advance(RingBuffer&, const RingBuffer::ByteRange& range)
-    {
-        return RingBuffer::ByteRange(
-                    range.begin + sizeof(TType),
-                    range.length > sizeof(TType) ? range.length - sizeof(TType) : 0);
     }
 };
 

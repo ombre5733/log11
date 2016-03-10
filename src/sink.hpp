@@ -42,22 +42,27 @@ class Sink
 public:
     //! Destroys the sink.
     virtual
-    ~Sink() {}
+    ~Sink();
+
+    //! Called when a new log entry starts.
+    virtual
+    void beginLogEntry();
+
+    //! Called when a log entry ends.
+    virtual
+    void endLogEntry();
 
     //! Outputs the single character \p ch.
     virtual
     void putChar(char ch) = 0;
 
     //! Outputs the string \p text which is of length \p size. Note that the
-    //! string may not be terminated with a NUL character. The default
-    //! implementation loops over the string and forwards every character
-    //! to putChar().
+    //! string may or may not be terminated with a NUL character. In general
+    //! it is not safe to access <tt>text[size]</tt>.
+    //! The default implementation loops over the string and forwards every
+    //! single character to putChar().
     virtual
-    void putString(const char* text, std::size_t size)
-    {
-        while (size--)
-            putChar(*text++);
-    }
+    void putString(const char* text, std::size_t size);
 };
 
 } // namespace log11

@@ -42,6 +42,10 @@ using namespace std;
 namespace log11
 {
 
+// ----=====================================================================----
+//     Converter
+// ----=====================================================================----
+
 class Converter : public Visitor
 {
 public:
@@ -98,6 +102,10 @@ private:
     Logger& m_logger;
 };
 
+// ----=====================================================================----
+//     LogStatement
+// ----=====================================================================----
+
 LogStatement::LogStatement(Severity severity, const char* msg)
     : m_timeStamp(LOG11_STD::chrono::high_resolution_clock::now().time_since_epoch().count()),
       m_message(msg),
@@ -107,6 +115,9 @@ LogStatement::LogStatement(Severity severity, const char* msg)
 {
 }
 
+// ----=====================================================================----
+//     Logger
+// ----=====================================================================----
 
 #ifdef LOG11_USE_WEOS
 Logger::Logger(const weos::thread_attributes& attrs)
@@ -175,6 +186,7 @@ void Logger::consumeFifoEntries()
             if (!stmt->m_message)
                 return;
 
+            sink->beginLogEntry();
             printHeader(stmt);
 
             if (stmt->m_extensionType == 0)
@@ -196,21 +208,22 @@ void Logger::consumeFifoEntries()
 
                 // Interpret the format string.
                 unsigned argCounter = 0;
-                const char* firstChar = stmt->m_message;
-                const char* iter = firstChar;
+                const char* beginPos = stmt->m_message;
+                const char* iter = beginPos;
                 for (; *iter; ++iter)
                 {
                     if (*iter == '{')
                     {
-                        if (iter != firstChar)
-                            sink->putString(firstChar, iter - firstChar);
+                        if (iter != beginPos)
+                            sink->putString(beginPos, iter - beginPos);
 
-                        firstChar = iter;
+                        // Loop to the end of the format specifier (or the end of the string).
+                        beginPos = ++iter;
                         while (*iter && *iter != '}')
                             ++iter;
-                        if (!*iter++)
+                        if (!*iter)
                         {
-                            firstChar = iter;
+                            beginPos = iter;
                             break;
                         }
 
@@ -220,11 +233,11 @@ void Logger::consumeFifoEntries()
                         else
                             sink->putString("?!", 2);
 
-                        firstChar = iter;
+                        beginPos = iter + 1;
                     }
                 }
-                if (iter != firstChar)
-                    sink->putString(firstChar, iter - firstChar);
+                if (iter != beginPos)
+                    sink->putString(beginPos, iter - beginPos);
 
                 sink->putChar('\n');
 
@@ -232,6 +245,8 @@ void Logger::consumeFifoEntries()
                 available.length -= 1 + extensionLength;
                 m_messageFifo.consume(1 + extensionLength);
             }
+
+            sink->endLogEntry();
         }
     }
 }

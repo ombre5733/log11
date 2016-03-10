@@ -155,12 +155,16 @@ void Logger::setSink(Sink* sink)
     m_sink = sink;
 }
 
-void Logger::log(Severity severity, const char* message)
+void Logger::doLog(ClaimPolicy policy, Severity severity, const char* message)
 {
     if (severity < m_severityThreshold)
         return;
 
-    auto claimed = m_messageFifo.claim(1);
+    auto claimed = policy == Block ? m_messageFifo.claim(1)
+                                   : m_messageFifo.tryClaim(1, policy == Truncate);
+    if (claimed.length == 0)
+        return;
+
     new (m_messageFifo[claimed.begin]) LogStatement(severity, message);
     m_messageFifo.publish(claimed);
 }

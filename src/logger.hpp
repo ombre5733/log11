@@ -73,9 +73,16 @@ struct LogStatement
 
 class Logger
 {
+    enum ClaimPolicy
+    {
+        Block,    //!< Block caller until sufficient space is available
+        Truncate, //!< Message will be truncated or even discarded
+        Discard   //!< Message is displayed fully or discarded
+    };
+
 public:
 #ifdef LOG11_USE_WEOS
-    Logger(const weos::thread_attributes& attrs)
+    Logger(const weos::thread_attributes& attrs);
 #else
     Logger();
 #endif // LOG11_USE_WEOS
@@ -87,10 +94,14 @@ public:
     void setSeverityThreshold(Severity severity);
     void setSink(Sink* sink);
 
-    void log(Severity severity, const char* message);
-
-    template <typename TArg, typename... TArgs>
-    void log(Severity severity, const char* format, TArg&& arg, TArgs&&... args);
+    //! Logs the \p message interpolated with the \p args using the specified
+    //! \p severity level. The caller is blocked until there is sufficient
+    //! space in the buffer.
+    template <typename... TArgs>
+    void log(Severity severity, const char* message, TArgs&&... args)
+    {
+        doLog(Block, severity, message, LOG11_STD::forward<TArgs>(args)...);
+    }
 
 private:
     RingBuffer m_messageFifo;
@@ -100,15 +111,23 @@ private:
 
     char m_conversionBuffer[32];
 
+
+    void doLog(ClaimPolicy policy, Severity severity, const char* message);
+
+    template <typename TArg, typename... TArgs>
+    void doLog(ClaimPolicy policy, Severity severity, const char* format,
+               TArg&& arg, TArgs&&... args);
+
     void consumeFifoEntries();
     void printHeader(LogStatement* stmt);
+
 
     friend class Converter;
 };
 
 template <typename TArg, typename... TArgs>
-void Logger::log(Severity severity, const char* format,
-                 TArg&& arg, TArgs&&... args)
+void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
+                   TArg&& arg, TArgs&&... args)
 {
     if (severity < m_severityThreshold)
         return;
@@ -116,16 +135,27 @@ void Logger::log(Severity severity, const char* format,
     auto serdes = Serdes<void*, typename LOG11_STD::decay<TArg>::type,
                          typename LOG11_STD::decay<TArgs>::type...>::instance();
     auto argSize = serdes->requiredSize(nullptr, arg, args...);
+    auto numSlots = 1 + (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement);
 
-    auto claimed = m_messageFifo.claim(
-                       1 + (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement));
+    auto claimed = policy == Block ? m_messageFifo.claim(numSlots)
+                                   : m_messageFifo.tryClaim(numSlots, policy == Truncate);
+    if (claimed.length == 0)
+        return;
+
     auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(severity, format);
-    stmt->m_extensionType = 1;
-    stmt->m_extensionSize = argSize;
-    serdes->serialize(m_messageFifo,
-                      m_messageFifo.byteRange(RingBuffer::Range(claimed.begin + 1, claimed.length - 1)),
-                      serdes, arg, args...);
-    m_messageFifo.publish(claimed);
+    if (claimed.length > 1)
+    {
+        if (claimed.length != numSlots)
+            argSize = (claimed.length - 1) * sizeof(LogStatement);
+        stmt->m_extensionType = 1;
+        stmt->m_extensionSize = argSize;
+        serdes->serialize(
+                m_messageFifo,
+                m_messageFifo.byteRange(
+                    RingBuffer::Range(claimed.begin + 1, claimed.length - 1)),
+                serdes, arg, args...);
+        m_messageFifo.publish(claimed);
+    }
 }
 
 } // namespace log11

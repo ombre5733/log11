@@ -351,7 +351,6 @@ int numDecimalDigits(uint64_t x)
         x /= 10000;
         digits += 4;
     }
-    return digits;
 }
 
 template <typename T>

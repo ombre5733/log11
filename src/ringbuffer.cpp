@@ -148,19 +148,19 @@ auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) const -
     if (!size)
         return range;
 
-    unsigned restSize = m_totalNumElements * m_elementSize - range.begin;
+    unsigned begin = range.begin % (m_totalNumElements * m_elementSize);
+    unsigned restSize = m_totalNumElements * m_elementSize - begin;
     if (size <= restSize)
     {
-        std::memcpy(dest, static_cast<const char*>(m_data) + range.begin, size);
+        std::memcpy(dest, static_cast<const char*>(m_data) + begin, size);
     }
     else
     {
-        std::memcpy(dest, static_cast<const char*>(m_data) + range.begin, size);
+        std::memcpy(dest, static_cast<const char*>(m_data) + begin, restSize);
         std::memcpy(static_cast<char*>(dest) + restSize, m_data, size - restSize);
     }
 
-    return ByteRange((range.begin + size) % (m_totalNumElements * m_elementSize),
-                     range.length - size);
+    return ByteRange(range.begin + size, range.length - size);
 }
 
 auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size) -> ByteRange
@@ -170,17 +170,17 @@ auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size
     if (!size)
         return range;
 
-    unsigned restSize = m_totalNumElements * m_elementSize - range.begin;
+    unsigned begin = range.begin % (m_totalNumElements * m_elementSize);
+    unsigned restSize = m_totalNumElements * m_elementSize - begin;
     if (size <= restSize)
     {
-        std::memcpy(static_cast<char*>(m_data) + range.begin, source, size);
+        std::memcpy(static_cast<char*>(m_data) + begin, source, size);
     }
     else
     {
-        std::memcpy(static_cast<char*>(m_data) + range.begin, source, restSize);
+        std::memcpy(static_cast<char*>(m_data) + begin, source, restSize);
         std::memcpy(m_data, static_cast<const char*>(source) + restSize, size - restSize);
     }
 
-    return ByteRange((range.begin + size) % (m_totalNumElements * m_elementSize),
-                     range.length - size);
+    return ByteRange(begin + size, range.length - size);
 }

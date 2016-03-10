@@ -47,7 +47,6 @@ namespace log11_detail
 template <typename... T>
 struct TypeList {};
 
-using serializable_types = TypeList<int, float>;
 
 
 template <typename T, typename U>
@@ -63,6 +62,24 @@ struct is_member<T, TypeList<TH, TL...>>
 
 template <typename T>
 struct is_member<T, TypeList<>> : LOG11_STD::false_type {};
+
+
+
+using serializable_types = TypeList<bool,
+                                    char,
+                                    signed char,
+                                    unsigned char,
+                                    short,
+                                    unsigned short,
+                                    int,
+                                    unsigned,
+                                    long,
+                                    unsigned long,
+                                    long long,
+                                    unsigned long long,
+                                    float,
+                                    double,
+                                    long double>;
 
 
 
@@ -91,10 +108,25 @@ public:
     virtual
     ~Visitor() {}
 
+    virtual void visit(bool value) = 0;
+    virtual void visit(char value) = 0;
+    virtual void visit(signed char value) = 0;
+    virtual void visit(unsigned char value) = 0;
+    virtual void visit(short value) = 0;
+    virtual void visit(unsigned short value) = 0;
     virtual void visit(int value) = 0;
+    virtual void visit(unsigned value) = 0;
+    virtual void visit(long value) = 0;
+    virtual void visit(unsigned long value) = 0;
+    virtual void visit(long long value) = 0;
+    virtual void visit(unsigned long long value) = 0;
     virtual void visit(float value) = 0;
+    virtual void visit(double value) = 0;
+    virtual void visit(long double value) = 0;
+
     virtual void visit(const void* value) = 0;
     virtual void visit(const char* value) = 0;
+
     virtual void outOfBounds() = 0;
 };
 

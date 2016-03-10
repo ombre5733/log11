@@ -55,56 +55,125 @@ public:
     {
     }
 
-    virtual
-    void visit(int value) override
+    virtual void visit(bool value)
     {
-        Sink* sink = m_logger.m_sink;
-        if (sink)
-        {
-            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
-                                   "%d", value);
-            sink->putString(m_logger.m_conversionBuffer, length);
-        }
+        if (value)
+            m_logger.m_sink.load()->putString("true", 4);
+        else
+            m_logger.m_sink.load()->putString("false", 5);
     }
 
-    virtual
-    void visit(float value) override
+    virtual void visit(char value)
     {
-        Sink* sink = m_logger.m_sink;
-        if (sink)
-        {
-            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
-                                   "%f", value);
-            sink->putString(m_logger.m_conversionBuffer, length);
-        }
+        m_logger.m_sink.load()->putChar(value);
     }
 
-    virtual
-    void visit(const void* value) override
+    virtual void visit(signed char value)
     {
-        Sink* sink = m_logger.m_sink;
-        if (sink)
-        {
-            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
-                                   "0x%08x", uintptr_t(value));
-            sink->putString(m_logger.m_conversionBuffer, length);
-        }
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%d", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual
-    void visit(const char* value) override
+    virtual void visit(unsigned char value)
     {
-        Sink* sink = m_logger.m_sink;
-        if (sink)
-            sink->putString(value, std::strlen(value));
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%u", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual
-    void outOfBounds()
+    virtual void visit(short value)
     {
-        Sink* sink = m_logger.m_sink;
-        if (sink)
-            sink->putString("?!", 2);
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%d", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(unsigned short value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%u", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(int value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%d", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(unsigned value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%u", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(long value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%ld", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(unsigned long value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%lu", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(long long value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%lld", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(unsigned long long value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%llu", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(float value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%f", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(double value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%f", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(long double value)
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "%Lf", value);
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(const void* value) override
+    {
+        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                               "0x%08lx", uintptr_t(value));
+        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+    }
+
+    virtual void visit(const char* value) override
+    {
+        m_logger.m_sink.load()->putString(value, std::strlen(value));
+    }
+
+    virtual void outOfBounds()
+    {
+        m_logger.m_sink.load()->putString("?!", 2);
     }
 
 private:
@@ -133,7 +202,7 @@ Logger::Logger(const weos::thread_attributes& attrs)
 #else
 Logger::Logger()
 #endif // LOG11_USE_WEOS
-    : m_messageFifo(sizeof(LogStatement), 100),
+    : m_messageFifo(sizeof(LogStatement), 10),
       m_stop(false),
       m_sink{nullptr},
       m_severityThreshold{Severity::Info}

@@ -89,6 +89,9 @@ public:
     Logger(std::size_t bufferSize);
 #endif // LOG11_USE_WEOS
 
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
     //! Destroys the logger.
     ~Logger();
 

@@ -24,24 +24,21 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#include "sink.hpp"
+#ifndef LOG11_SEVERITY_HPP
+#define LOG11_SEVERITY_HPP
 
-using namespace log11;
-
-Sink::~Sink()
+namespace log11
 {
-}
 
-void Sink::beginLogEntry(Severity /*severity*/)
+enum class Severity
 {
-}
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error
+};
 
-void Sink::endLogEntry()
-{
-}
+} // namespace log11
 
-void Sink::putString(const char* text, std::size_t size)
-{
-    while (size--)
-        putChar(*text++);
-}
+#endif // LOG11_SEVERITY_HPP

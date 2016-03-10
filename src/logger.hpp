@@ -30,6 +30,7 @@
 #include "config.hpp"
 #include "ringbuffer.hpp"
 #include "serdes.hpp"
+#include "severity.hpp"
 
 #ifdef LOG11_USE_WEOS
 #include <weos/atomic.hpp>
@@ -51,21 +52,15 @@ namespace log11
 
 class Sink;
 
-enum class Severity
-{
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error
-};
-
 namespace log11_detail
 {
 
 struct LogStatement
 {
     LogStatement(Severity severity, const char* msg);
+
+    LogStatement(const LogStatement&) = delete;
+    LogStatement& operator=(const LogStatement&) = delete;
 
     std::int64_t m_timeStamp;
     const char* m_message;

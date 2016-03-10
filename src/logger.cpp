@@ -191,7 +191,7 @@ void Logger::consumeFifoEntries()
             if (!stmt->m_message)
                 return;
 
-            sink->beginLogEntry();
+            sink->beginLogEntry(static_cast<Severity>(stmt->m_severity));
             printHeader(stmt);
 
             if (stmt->m_extensionType == 0)
@@ -206,7 +206,7 @@ void Logger::consumeFifoEntries()
             else
             {
                 unsigned extensionLength = (stmt->m_extensionSize + sizeof(LogStatement) - 1)
-                                          / sizeof(LogStatement);
+                                           / sizeof(LogStatement);
                 SerdesBase* serdes = *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1]);
                 auto byteRange = m_messageFifo.byteRange(
                                      RingBuffer::Range(available.begin + 1, extensionLength));

@@ -27,6 +27,8 @@
 #ifndef LOG11_SINK_HPP
 #define LOG11_SINK_HPP
 
+#include "severity.hpp"
+
 #include <cstddef>
 
 
@@ -46,7 +48,7 @@ public:
 
     //! Called when a new log entry starts.
     virtual
-    void beginLogEntry();
+    void beginLogEntry(Severity severity);
 
     //! Called when a log entry ends.
     virtual

@@ -60,6 +60,9 @@ enum class Severity
     Error
 };
 
+namespace log11_detail
+{
+
 struct LogStatement
 {
     LogStatement(Severity severity, const char* msg);
@@ -70,6 +73,8 @@ struct LogStatement
     unsigned m_extensionType : 2;
     unsigned m_severity : 4;
 };
+
+} // namespace log11_detail
 
 class Logger
 {
@@ -119,7 +124,7 @@ private:
                TArg&& arg, TArgs&&... args);
 
     void consumeFifoEntries();
-    void printHeader(LogStatement* stmt);
+    void printHeader(log11_detail::LogStatement* stmt);
 
 
     friend class Converter;
@@ -129,6 +134,8 @@ template <typename TArg, typename... TArgs>
 void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
                    TArg&& arg, TArgs&&... args)
 {
+    using namespace log11_detail;
+
     if (severity < m_severityThreshold)
         return;
 

@@ -34,6 +34,8 @@
 
 namespace log11
 {
+namespace log11_detail
+{
 
 template <typename... T>
 struct TypeList {};
@@ -177,6 +179,7 @@ public:
     }
 };
 
+} // namespace log11_detail
 } // namespace log11
 
 #endif // LOG11_SERDES_HPP

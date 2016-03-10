@@ -41,6 +41,7 @@ using namespace std;
 
 namespace log11
 {
+using namespace log11_detail;
 
 // ----=====================================================================----
 //     Converter

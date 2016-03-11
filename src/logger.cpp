@@ -212,7 +212,7 @@ Logger::Logger(const weos::thread_attributes& attrs, std::size_t bufferSize)
 Logger::Logger(std::size_t bufferSize)
 #endif // LOG11_USE_WEOS
     : m_messageFifo(sizeof(LogStatement), bufferSize),
-      m_stop(false),
+      m_flags(AppendNewLine),
       m_sink{nullptr},
       m_severityThreshold{Severity::Info}
 {
@@ -225,19 +225,33 @@ Logger::Logger(std::size_t bufferSize)
 
 Logger::~Logger()
 {
-    m_stop = true;
+    m_flags |= StopRequest;
     // Signal the consumer thread.
     auto claimed = m_messageFifo.claim(1);
     new (m_messageFifo[claimed.begin]) LogStatement(Severity::Debug, nullptr);
     m_messageFifo.publish(claimed);
 }
 
-void Logger::setSeverityThreshold(Severity severity)
+void Logger::setSeverityThreshold(Severity severity) noexcept
 {
     m_severityThreshold = severity;
 }
 
-void Logger::setSink(Sink* sink)
+void Logger::setAutomaticNewLine(bool enable) noexcept
+{
+    if (enable)
+    {
+        int flag = m_flags;
+        while (!m_flags.compare_exchange_weak(flag, flag | AppendNewLine));
+    }
+    else
+    {
+        int flag = m_flags;
+        while (!m_flags.compare_exchange_weak(flag, flag & ~AppendNewLine));
+    }
+}
+
+void Logger::setSink(Sink* sink) noexcept
 {
     m_sink = sink;
 }
@@ -264,10 +278,10 @@ void Logger::consumeFifoEntries()
 {
     Converter converter(*this);
 
-    while (!m_stop)
+    while ((m_flags & StopRequest) == 0)
     {
         auto available = m_messageFifo.available();
-        while (!m_stop && available.length)
+        while ((m_flags & StopRequest) == 0 && available.length)
         {
             // If no sink is attached to the logger, consume all FIFO entries.
             Sink* sink = m_sink;
@@ -287,7 +301,6 @@ void Logger::consumeFifoEntries()
             if (stmt->m_extensionType == 0)
             {
                 sink->putString(stmt->m_message, std::strlen(stmt->m_message));
-                sink->putChar('\n');
 
                 ++available.begin;
                 --available.length;
@@ -335,13 +348,13 @@ void Logger::consumeFifoEntries()
                 if (iter != beginPos)
                     sink->putString(beginPos, iter - beginPos);
 
-                sink->putChar('\n');
-
                 available.begin += 1 + stmt->m_extensionSize;
                 available.length -= 1 + stmt->m_extensionSize;
                 m_messageFifo.consume(1 + stmt->m_extensionSize);
             }
 
+            if (m_flags & AppendNewLine)
+                sink->putChar('\n');
             sink->endLogEntry();
         }
     }

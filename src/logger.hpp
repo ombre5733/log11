@@ -96,8 +96,13 @@ public:
     ~Logger();
 
     //! Sets the \p severity filter.
-    void setSeverityThreshold(Severity severity);
-    void setSink(Sink* sink);
+    void setSeverityThreshold(Severity severity) noexcept;
+
+    //! If \p enable is set, a new-line is automatically appended to every
+    //! log statement. This is enabled by default.
+    void setAutomaticNewLine(bool enable) noexcept;
+
+    void setSink(Sink* sink) noexcept;
 
     //! Logs the \p message interpolated with the \p args using the specified
     //! \p severity level. The caller is blocked until there is sufficient
@@ -109,8 +114,14 @@ public:
     }
 
 private:
+    enum Flags
+    {
+        StopRequest   = 0x01,
+        AppendNewLine = 0x02
+    };
+
     RingBuffer m_messageFifo;
-    LOG11_STD::atomic_bool m_stop;
+    LOG11_STD::atomic_int m_flags;
     LOG11_STD::atomic<Sink*> m_sink;
     LOG11_STD::atomic<Severity> m_severityThreshold;
 

@@ -253,7 +253,11 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* message)
         return;
 
     new (m_messageFifo[claimed.begin]) LogStatement(severity, message);
-    m_messageFifo.publish(claimed);
+
+    if (policy == Block)
+        m_messageFifo.publish(claimed);
+    else
+        m_messageFifo.tryPublish(claimed);
 }
 
 void Logger::consumeFifoEntries()

@@ -111,6 +111,8 @@ public:
     //! all prior producers have published their slots.
     void publish(const Range& range);
 
+    void tryPublish(const Range& range);
+
     // Consumer interface
 
     //! Returns the range of slots which can be consumed.

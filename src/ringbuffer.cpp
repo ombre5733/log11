@@ -106,6 +106,12 @@ void RingBuffer::publish(const Range& range)
     m_progressSignal.notify_all();
 }
 
+void RingBuffer::tryPublish(const Range& range)
+{
+    // TODO: Make this non-blocking.
+    publish(range);
+}
+
 
 
 auto RingBuffer::available() const noexcept -> Range

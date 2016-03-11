@@ -37,6 +37,8 @@
 #include <condition_variable>
 #endif // LOG11_USE_WEOS
 
+#include <utility>
+
 
 namespace log11
 {
@@ -66,6 +68,19 @@ public:
         unsigned length;
     };
 
+    struct Slice
+    {
+        Slice(void* p, unsigned l)
+            : pointer(p), length(l)
+        {
+        }
+
+        void* pointer;
+        unsigned length;
+    };
+
+
+
     //! Creates a ring buffer whose slots are of size \p elementSize. The
     //! total amount of memory occupied by the ring buffer is \p size (rounded
     //! up to the next multiple of \p elementSize).
@@ -76,6 +91,8 @@ public:
 
     RingBuffer(const RingBuffer&) = delete;
     RingBuffer& operator=(const RingBuffer&) = delete;
+
+    // Producer interface
 
     //! Claims \p numElements slots from the ring buffer. The caller is
     //! blocked until the slots are free.
@@ -94,12 +111,15 @@ public:
     //! all prior producers have published their slots.
     void publish(const Range& range);
 
+    // Consumer interface
+
     //! Returns the range of slots which can be consumed.
     Range available() const noexcept;
 
     //! Consumes \p numEntries slots.
     void consume(unsigned numEntries) noexcept;
 
+    // Data access
 
     //! Returns a pointer to the \p index-th slot.
     void* operator[](unsigned index) noexcept;
@@ -109,6 +129,8 @@ public:
     ByteRange read(const ByteRange& range, void* dest, unsigned size) const;
 
     ByteRange write(const void* source, const ByteRange& range, unsigned size);
+
+    std::pair<Slice, Slice> unwrap(const ByteRange& range) const noexcept;
 
 private:
     //! The ring buffer's data.

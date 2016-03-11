@@ -171,6 +171,15 @@ public:
         m_logger.m_sink.load()->putString(value, std::strlen(value));
     }
 
+    virtual void visit(const StringRef& s1, const StringRef& s2)
+    {
+        Sink* sink = m_logger.m_sink;
+        if (s1.size())
+            sink->putString(s1.data(), s1.size());
+        if (s2.size())
+            sink->putString(s2.data(), s2.size());
+    }
+
     virtual void outOfBounds()
     {
         m_logger.m_sink.load()->putString("?!", 2);

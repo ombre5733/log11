@@ -106,6 +106,8 @@ void RingBuffer::publish(const Range& range)
     m_progressSignal.notify_all();
 }
 
+
+
 auto RingBuffer::available() const noexcept -> Range
 {
     int free = m_published - m_consumed;
@@ -129,11 +131,11 @@ void RingBuffer::consume(unsigned numEntries) noexcept
 }
 
 
+
 void* RingBuffer::operator[](unsigned index) noexcept
 {
     return static_cast<char*>(m_data) + (index % m_totalNumElements) * m_elementSize;
 }
-
 
 auto RingBuffer::byteRange(const Range& range) const noexcept -> ByteRange
 {
@@ -183,4 +185,22 @@ auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size
     }
 
     return ByteRange(begin + size, range.length - size);
+}
+
+auto RingBuffer::unwrap(const ByteRange& range) const noexcept -> std::pair<Slice, Slice>
+{
+    unsigned begin = range.begin % (m_totalNumElements * m_elementSize);
+    unsigned restSize = m_totalNumElements * m_elementSize - begin;
+    if (range.length <= restSize)
+    {
+        return std::pair<Slice, Slice>(
+                    Slice(static_cast<char*>(m_data) + begin, range.length),
+                    Slice(nullptr, 0));
+    }
+    else
+    {
+        return std::pair<Slice, Slice>(
+                    Slice(static_cast<char*>(m_data) + begin, restSize),
+                    Slice(m_data, range.length - restSize));
+    }
 }

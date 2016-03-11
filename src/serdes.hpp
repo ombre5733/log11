@@ -28,6 +28,7 @@
 #define LOG11_SERDES_HPP
 
 #include "ringbuffer.hpp"
+#include "stringref.hpp"
 
 #include <cstddef>
 #include <utility>
@@ -41,6 +42,7 @@
 
 namespace log11
 {
+
 namespace log11_detail
 {
 
@@ -79,7 +81,8 @@ using serializable_types = TypeList<bool,
                                     unsigned long long,
                                     float,
                                     double,
-                                    long double>;
+                                    long double,
+                                    StringRef>;
 
 
 
@@ -128,6 +131,7 @@ public:
 
     virtual void visit(const void* value) = 0;
     virtual void visit(const char* value) = 0;
+    virtual void visit(const StringRef& s1, const StringRef& s2) = 0;
 
     virtual void outOfBounds() = 0;
 };
@@ -153,11 +157,20 @@ protected:
         return sizeof(arg) + doRequiredSize(args...);
     }
 
+    template <typename... TArgs>
+    static
+    std::size_t doRequiredSize(const StringRef& arg, const TArgs&... args)
+    {
+        return sizeof(unsigned) + arg.size() + doRequiredSize(args...);
+    }
+
     static
     std::size_t doRequiredSize()
     {
         return 0;
     }
+
+
 
     template <typename TArg, typename... TArgs>
     static
@@ -171,10 +184,28 @@ protected:
         }
     }
 
+    template <typename... TArgs>
+    static
+    void doSerialize(RingBuffer& buffer, RingBuffer::ByteRange range,
+                     const StringRef& arg, const TArgs&... args)
+    {
+        if (range.length > sizeof(unsigned))
+        {
+            unsigned length = arg.size() + sizeof(unsigned) <= range.length
+                              ? arg.size()
+                              : range.length - sizeof(unsigned);
+            range = buffer.write(&length, range, sizeof(unsigned));
+            range = buffer.write(arg.data(), range, length);
+            doSerialize(buffer, range, args...);
+        }
+    }
+
     static
     void doSerialize(RingBuffer&, RingBuffer::ByteRange)
     {
     }
+
+
 
     template <typename TArg, typename... TArgs>
     static
@@ -194,6 +225,43 @@ protected:
             {
                 range.begin += sizeof(TArg);
                 range.length -= sizeof(TArg);
+                doApply(TypeList<TArgs...>(),
+                        buffer, range, argIndex - 1, visitor);
+            }
+        }
+        else
+        {
+            visitor.outOfBounds();
+        }
+    }
+
+    template <typename... TArgs>
+    static
+    void doApply(TypeList<StringRef, TArgs...>,
+                 RingBuffer& buffer, RingBuffer::ByteRange range,
+                 std::size_t argIndex, Visitor& visitor)
+    {
+        if (range.length > sizeof(unsigned))
+        {
+            unsigned length;
+            buffer.read(range, &length, sizeof(unsigned));
+            range.begin += sizeof(unsigned);
+            range.length -= sizeof(unsigned);
+
+            if (argIndex == 0)
+            {
+                auto ranges = buffer.unwrap(
+                                  RingBuffer::ByteRange(range.begin, length));
+                visitor.visit(
+                        StringRef(static_cast<const char*>(ranges.first.pointer),
+                                  ranges.first.length),
+                        StringRef(static_cast<const char*>(ranges.second.pointer),
+                                  ranges.second.length));
+            }
+            else
+            {
+                range.begin += length;
+                range.length = range.length > length ? range.length - length : 0;
                 doApply(TypeList<TArgs...>(),
                         buffer, range, argIndex - 1, visitor);
             }

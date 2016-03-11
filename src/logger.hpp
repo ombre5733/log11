@@ -148,10 +148,11 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
                          typename decay<TArg>::type,
                          typename decay<TArgs>::type...>::instance();
     auto argSize = serdes->requiredSize(nullptr, arg, args...);
-    auto numSlots = 1 + (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement);
+    argSize = (argSize + sizeof(LogStatement) - 1) / sizeof(LogStatement);
 
-    auto claimed = policy == Block ? m_messageFifo.claim(numSlots)
-                                   : m_messageFifo.tryClaim(numSlots, policy == Truncate);
+    auto claimed = policy == Block ? m_messageFifo.claim(1 + argSize)
+                                   : m_messageFifo.tryClaim(1 + argSize,
+                                                            policy == Truncate);
     if (claimed.length == 0)
         return;
 
@@ -159,7 +160,7 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
     stmt->m_extensionType = 1;
     if (claimed.length > 1)
     {
-        if (claimed.length != numSlots)
+        if (claimed.length != 1 + argSize)
             argSize = (claimed.length - 1) * sizeof(LogStatement);
         stmt->m_extensionSize = argSize;
         serdes->serialize(

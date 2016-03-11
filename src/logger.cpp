@@ -282,13 +282,13 @@ void Logger::consumeFifoEntries()
             }
             else
             {
-                unsigned extensionSlots = (stmt->m_extensionSize + sizeof(LogStatement) - 1)
-                                           / sizeof(LogStatement);
                 SerdesBase* serdes
-                        = extensionSlots ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1])
-                                         : nullptr;
+                        = stmt->m_extensionSize
+                          ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1])
+                          : nullptr;
                 auto byteRange = m_messageFifo.byteRange(
-                                     RingBuffer::Range(available.begin + 1, extensionSlots));
+                                     RingBuffer::Range(available.begin + 1,
+                                                       stmt->m_extensionSize));
 
                 // Interpret the format string.
                 unsigned argCounter = 0;
@@ -324,9 +324,9 @@ void Logger::consumeFifoEntries()
 
                 sink->putChar('\n');
 
-                available.begin += 1 + extensionSlots;
-                available.length -= 1 + extensionSlots;
-                m_messageFifo.consume(1 + extensionSlots);
+                available.begin += 1 + stmt->m_extensionSize;
+                available.length -= 1 + stmt->m_extensionSize;
+                m_messageFifo.consume(1 + stmt->m_extensionSize);
             }
 
             sink->endLogEntry();

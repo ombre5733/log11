@@ -161,14 +161,28 @@ public:
 
     virtual void visit(const void* value) override
     {
-        auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
-                               "0x%08lx", uintptr_t(value));
-        m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+        if (value)
+        {
+            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                                   "0x%08lx", uintptr_t(value));
+            m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+        }
+        else
+        {
+            m_logger.m_sink.load()->putString("<null>", 6);
+        }
     }
 
     virtual void visit(const char* value) override
     {
-        m_logger.m_sink.load()->putString(value, std::strlen(value));
+        if (value)
+        {
+            m_logger.m_sink.load()->putString(value, std::strlen(value));
+        }
+        else
+        {
+            m_logger.m_sink.load()->putString("<null>", 6);
+        }
     }
 
     virtual void visit(const StringRef& s1, const StringRef& s2)

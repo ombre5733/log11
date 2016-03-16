@@ -38,11 +38,13 @@
 #include <weos/condition_variable.hpp>
 #include <weos/thread.hpp>
 #include <weos/type_traits.hpp>
+#include <weos/utility.hpp>
 #else
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <type_traits>
+#include <utility>
 #endif // LOG11_USE_WEOS
 
 #include <cstddef>
@@ -72,6 +74,17 @@ struct LogStatement
 };
 
 } // namespace log11_detail
+
+//! A tag type for log entries which may be discarded.
+struct may_discard_t {};
+//! A tag type for log entries which may be truncated.
+struct may_truncate_t {};
+
+//! This tag specifies that a log entry may be discarded if the FIFO is full.
+constexpr may_discard_t may_discard = may_discard_t();
+//! This tag specifies that a log entry may be truncated (or even discarded)
+//! if there is no sufficient space in the FIFO.
+constexpr may_truncate_t may_truncate = may_truncate_t();
 
 class Logger
 {
@@ -111,6 +124,179 @@ public:
     void log(Severity severity, const char* message, TArgs&&... args)
     {
         doLog(Block, severity, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! Logs the \p message interpolated with the \p args using the specified
+    //! \p severity level. If the space in the buffer is too small, the
+    //! log entry is discarded but the caller is not blocked.
+    template <typename... TArgs>
+    void log(may_discard_t, Severity severity, const char* message,
+             TArgs&&... args)
+    {
+        doLog(Discard, severity, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! Logs the \p message interpolated with the \p args using the specified
+    //! \p severity level. If the space in the buffer is too small, the
+    //! log entry is truncated (or even discarded if no space is left at all)
+    //! but the caller is not blocked.
+    template <typename... TArgs>
+    void log(may_truncate_t, Severity severity, const char* message,
+             TArgs&&... args)
+    {
+        doLog(Truncate, severity, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    // debug()
+
+    //! \brief A convenience function for info log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(Severity::Debug, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void debug(const char* message, TArgs&&... args)
+    {
+        doLog(Block, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for info log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_discard, Severity::Debug, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void debug(may_discard_t, const char* message, TArgs&&... args)
+    {
+        doLog(Discard, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for info log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_truncate, Severity::Debug, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void debug(may_truncate_t, const char* message, TArgs&&... args)
+    {
+        doLog(Truncate, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    // info()
+
+    //! \brief A convenience function for info log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(Severity::Info, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void info(const char* message, TArgs&&... args)
+    {
+        doLog(Block, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for info log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_discard, Severity::Info, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void info(may_discard_t, const char* message, TArgs&&... args)
+    {
+        doLog(Discard, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for info log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_truncate, Severity::Info, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void info(may_truncate_t, const char* message, TArgs&&... args)
+    {
+        doLog(Truncate, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    // warn()
+
+    //! \brief A convenience function for warning log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(Severity::Warn, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void warn(const char* message, TArgs&&... args)
+    {
+        doLog(Block, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for warning log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_discard, Severity::Warn, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void warn(may_discard_t, const char* message, TArgs&&... args)
+    {
+        doLog(Discard, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for warning log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_truncate, Severity::Warn, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void warn(may_truncate_t, const char* message, TArgs&&... args)
+    {
+        doLog(Truncate, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    // error()
+
+    //! \brief A convenience function for error log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(Severity::Error, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void error(const char* message, TArgs&&... args)
+    {
+        doLog(Block, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for error log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_discard, Severity::Error, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void error(may_discard_t, const char* message, TArgs&&... args)
+    {
+        doLog(Discard, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for error log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_truncate, Severity::Error, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void error(may_truncate_t, const char* message, TArgs&&... args)
+    {
+        doLog(Truncate, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
     }
 
 private:

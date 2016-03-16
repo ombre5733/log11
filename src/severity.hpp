@@ -36,7 +36,8 @@ enum class Severity
     Debug,
     Info,
     Warn,
-    Error
+    Error,
+    Fatal
 };
 
 } // namespace log11

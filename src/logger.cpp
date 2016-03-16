@@ -55,7 +55,8 @@ public:
     {
     }
 
-    virtual void visit(bool value)
+    virtual
+    void visit(bool value) override
     {
         if (value)
             m_logger.m_sink.load()->putString("true", 4);
@@ -63,103 +64,118 @@ public:
             m_logger.m_sink.load()->putString("false", 5);
     }
 
-    virtual void visit(char value)
+    virtual
+    void visit(char value) override
     {
         m_logger.m_sink.load()->putChar(value);
     }
 
-    virtual void visit(signed char value)
+    virtual
+    void visit(signed char value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%d", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(unsigned char value)
+    virtual
+    void visit(unsigned char value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%u", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(short value)
+    virtual
+    void visit(short value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%d", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(unsigned short value)
+    virtual
+    void visit(unsigned short value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%u", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(int value)
+    virtual
+    void visit(int value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%d", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(unsigned value)
+    virtual
+    void visit(unsigned value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%u", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(long value)
+    virtual
+    void visit(long value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%ld", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(unsigned long value)
+    virtual
+    void visit(unsigned long value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%lu", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(long long value)
+    virtual
+    void visit(long long value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%lld", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(unsigned long long value)
+    virtual
+    void visit(unsigned long long value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%llu", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(float value)
+    virtual
+    void visit(float value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%f", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(double value)
+    virtual
+    void visit(double value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%f", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(long double value)
+    virtual
+    void visit(long double value) override
     {
         auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
                                "%Lf", value);
         m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
     }
 
-    virtual void visit(const void* value) override
+    virtual
+    void visit(const void* value) override
     {
         if (value)
         {
@@ -173,7 +189,8 @@ public:
         }
     }
 
-    virtual void visit(const char* value) override
+    virtual
+    void visit(const char* value) override
     {
         if (value)
         {
@@ -185,7 +202,8 @@ public:
         }
     }
 
-    virtual void visit(const StringRef& s1, const StringRef& s2)
+    virtual
+    void visit(const StringRef& s1, const StringRef& s2) override
     {
         Sink* sink = m_logger.m_sink;
         if (s1.size())
@@ -194,7 +212,8 @@ public:
             sink->putString(s2.data(), s2.size());
     }
 
-    virtual void outOfBounds()
+    virtual
+    void outOfBounds() override
     {
         m_logger.m_sink.load()->putString("?!", 2);
     }
@@ -411,7 +430,8 @@ void Logger::printHeader(LogStatement* stmt)
         "DEBUG",
         "INFO ",
         "WARN ",
-        "ERROR"
+        "ERROR",
+        "FATAL"
     };
 
     using namespace LOG11_STD::chrono;

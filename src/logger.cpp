@@ -402,7 +402,8 @@ void Logger::consumeFifoEntries()
                 auto numArgs = serdes->numArguments();
                 for (unsigned argCounter = 1; argCounter < numArgs; ++argCounter)
                 {
-                    serdes->apply(m_messageFifo, byteRange, argCounter, converter);
+                    if (!serdes->apply(m_messageFifo, byteRange, argCounter, converter))
+                        break;
                     sink->putChar(' ');
                 }
 

@@ -146,7 +146,7 @@ public:
     std::size_t numArguments() const noexcept = 0;
 
     virtual
-    void apply(RingBuffer& buffer, RingBuffer::ByteRange range,
+    bool apply(RingBuffer& buffer, RingBuffer::ByteRange range,
                std::size_t index, Visitor& visitor) = 0;
 
 protected:
@@ -209,9 +209,9 @@ protected:
 
     template <typename TArg, typename... TArgs>
     static
-    void doApply(TypeList<TArg, TArgs...>,
-                 RingBuffer& buffer, RingBuffer::ByteRange range,
-                 std::size_t argIndex, Visitor& visitor)
+    bool doApply(RingBuffer& buffer, RingBuffer::ByteRange range,
+                 std::size_t argIndex, Visitor& visitor,
+                 TypeList<TArg, TArgs...>)
     {
         if (range.length >= sizeof(TArg))
         {
@@ -220,26 +220,28 @@ protected:
                 TArg temp;
                 buffer.read(range, &temp, sizeof(TArg));
                 visitor.visit(temp);
+                return true;
             }
             else
             {
                 range.begin += sizeof(TArg);
                 range.length -= sizeof(TArg);
-                doApply(TypeList<TArgs...>(),
-                        buffer, range, argIndex - 1, visitor);
+                return doApply(buffer, range, argIndex - 1, visitor,
+                               TypeList<TArgs...>());
             }
         }
         else
         {
             visitor.outOfBounds();
+            return false;
         }
     }
 
     template <typename... TArgs>
     static
-    void doApply(TypeList<StringRef, TArgs...>,
-                 RingBuffer& buffer, RingBuffer::ByteRange range,
-                 std::size_t argIndex, Visitor& visitor)
+    bool doApply(RingBuffer& buffer, RingBuffer::ByteRange range,
+                 std::size_t argIndex, Visitor& visitor,
+                 TypeList<StringRef, TArgs...>)
     {
         if (range.length > sizeof(unsigned))
         {
@@ -257,26 +259,29 @@ protected:
                                   ranges.first.length),
                         StringRef(static_cast<const char*>(ranges.second.pointer),
                                   ranges.second.length));
+                return true;
             }
             else
             {
                 range.begin += length;
                 range.length = range.length > length ? range.length - length : 0;
-                doApply(TypeList<TArgs...>(),
-                        buffer, range, argIndex - 1, visitor);
+                return doApply(buffer, range, argIndex - 1, visitor,
+                               TypeList<TArgs...>());
             }
         }
         else
         {
             visitor.outOfBounds();
+            return false;
         }
     }
 
     static
-    void doApply(TypeList<>,
-                 RingBuffer& /*buffer*/, const RingBuffer::ByteRange& /*range*/,
-                 std::size_t /*argIndex*/, Visitor& /*visitor*/)
+    bool doApply(RingBuffer& /*buffer*/, const RingBuffer::ByteRange& /*range*/,
+                 std::size_t /*argIndex*/, Visitor& /*visitor*/,
+                 TypeList<>)
     {
+        return false;
     }
 };
 
@@ -311,13 +316,19 @@ public:
     }
 
     virtual
-    void apply(RingBuffer& buffer, RingBuffer::ByteRange range,
+    bool apply(RingBuffer& buffer, RingBuffer::ByteRange range,
                std::size_t index, Visitor& visitor) override
     {
         if (index < numArguments())
-            SerdesBase::doApply(TypeList<T...>(), buffer, range, index, visitor);
+        {
+            return SerdesBase::doApply(buffer, range, index, visitor,
+                                       TypeList<T...>());
+        }
         else
+        {
             visitor.outOfBounds();
+            return false;
+        }
     }
 };
 

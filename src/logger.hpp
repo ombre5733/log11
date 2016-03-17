@@ -229,7 +229,7 @@ public:
     }
 
     //! Creates a log stream with the given \p severity. The resulting object
-    //! can be used to create a log entry using C++ streaming notation as in
+    //! can be used to create a log entry using C++ stream notation as in
     //! \code
     //! log(Severity::Error) << "The input" << someVar << "is too large";
     //! log(Severity::Debug) << "a:" << a << "b:" << b << "sum:" << a + b;
@@ -274,6 +274,17 @@ public:
         doLog(Truncate, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
     }
 
+    //! \brief A convenience function for debug streams.
+    //!
+    //! Creates a debug stream equivalent to
+    //! \code
+    //! log(Severity::Debug)
+    //! \endcode
+    log11_detail::LogStreamStatement<> debug()
+    {
+        return log(Severity::Debug);
+    }
+
     // info()
 
     //! \brief A convenience function for info log entries.
@@ -310,6 +321,17 @@ public:
     void info(may_truncate_t, const char* message, TArgs&&... args)
     {
         doLog(Truncate, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for info streams.
+    //!
+    //! Creates an info stream equivalent to
+    //! \code
+    //! log(Severity::Info)
+    //! \endcode
+    log11_detail::LogStreamStatement<> info()
+    {
+        return log(Severity::Info);
     }
 
     // warn()
@@ -350,6 +372,17 @@ public:
         doLog(Truncate, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
     }
 
+    //! \brief A convenience function for warning streams.
+    //!
+    //! Creates a warning stream equivalent to
+    //! \code
+    //! log(Severity::Warn)
+    //! \endcode
+    log11_detail::LogStreamStatement<> warn()
+    {
+        return log(Severity::Warn);
+    }
+
     // error()
 
     //! \brief A convenience function for error log entries.
@@ -386,6 +419,17 @@ public:
     void error(may_truncate_t, const char* message, TArgs&&... args)
     {
         doLog(Truncate, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for error streams.
+    //!
+    //! Creates an error stream equivalent to
+    //! \code
+    //! log(Severity::Error)
+    //! \endcode
+    log11_detail::LogStreamStatement<> error()
+    {
+        return log(Severity::Error);
     }
 
 private:

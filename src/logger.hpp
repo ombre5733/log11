@@ -54,6 +54,7 @@
 namespace log11
 {
 
+class Logger;
 class Sink;
 
 namespace log11_detail
@@ -73,7 +74,86 @@ struct LogStatement
     unsigned m_severity : 4;
 };
 
+template <typename... T>
+class LogStreamStatement;
+
+template <>
+class LogStreamStatement<>
+{
+public:
+    LogStreamStatement(Logger* logger, Severity severity)
+        : m_logger(logger),
+          m_severity(static_cast<int>(severity))
+    {
+    }
+
+    template <typename TArg>
+    LogStreamStatement<typename LOG11_STD::decay<TArg>::type>
+    operator<<(TArg&& arg)
+    {
+        using namespace LOG11_STD;
+        return LogStreamStatement<typename decay<TArg>::type>(
+                    *this, forward<TArg>(arg));
+    }
+
+private:
+    Logger* m_logger;
+    unsigned m_severity : 4;
+
+    template <typename... U>
+    friend class LogStreamStatement;
+};
+
+template <typename... T>
+class LogStreamStatement
+{
+public:
+    ~LogStreamStatement();
+
+    template <typename TArg>
+    LogStreamStatement<T..., typename LOG11_STD::decay<TArg>::type>
+    operator<<(TArg&& arg)
+    {
+        using namespace LOG11_STD;
+        m_active = false;
+        return LogStreamStatement<T..., typename decay<TArg>::type>(
+                    *this, forward<TArg>(arg),
+                    make_integer_sequence<int, sizeof...(T)>());
+    }
+
+private:
+    LOG11_STD::tuple<T...> m_data;
+    Logger* m_logger;
+    unsigned m_severity : 4;
+    unsigned m_active : 1;
+
+
+    template <typename T2>
+    LogStreamStatement(const LogStreamStatement<>& stmt, T2&& tail)
+        : m_data(tail),
+          m_logger(stmt.m_logger),
+          m_severity(stmt.m_severity),
+          m_active(true)
+    {
+    }
+
+    template <typename... T1, typename T2, int... TI>
+    LogStreamStatement(const LogStreamStatement<T1...>& stmt,
+                       T2&& tail,
+                       LOG11_STD::integer_sequence<int, TI...>)
+        : m_data(LOG11_STD::get<TI>(stmt.m_data)..., tail),
+          m_logger(stmt.m_logger),
+          m_severity(stmt.m_severity),
+          m_active(true)
+    {
+    }
+
+    template <typename... U>
+    friend class LogStreamStatement;
+};
+
 } // namespace log11_detail
+
 
 //! A tag type for log entries which may be discarded.
 struct may_discard_t {};
@@ -115,6 +195,7 @@ public:
     //! log statement. This is enabled by default.
     void setAutomaticNewLine(bool enable) noexcept;
 
+    //! Sets the logger's \p sink.
     void setSink(Sink* sink) noexcept;
 
     //! Logs the \p message interpolated with the \p args using the specified
@@ -146,6 +227,14 @@ public:
     {
         doLog(Truncate, severity, message, LOG11_STD::forward<TArgs>(args)...);
     }
+
+    //! Creates a log stream with the given \p severity. The resulting object
+    //! can be used to create a log entry using C++ streaming notation as in
+    //! \code
+    //! log(Severity::Error) << "The input" << someVar << "is too large";
+    //! log(Severity::Debug) << "a:" << a << "b:" << b << "sum:" << a + b;
+    //! \endcode
+    log11_detail::LogStreamStatement<> log(Severity severity);
 
     // debug()
 
@@ -320,11 +409,19 @@ private:
     void doLog(ClaimPolicy policy, Severity severity, const char* format,
                TArg&& arg, TArgs&&... args);
 
+    template <typename... TArgs, int... TIndices>
+    void doLogStream(ClaimPolicy policy, Severity severity,
+                     const LOG11_STD::tuple<TArgs...>& stream,
+                     LOG11_STD::integer_sequence<int, TIndices...>);
+
     void consumeFifoEntries();
     void printHeader(log11_detail::LogStatement* stmt);
 
 
     friend class Converter;
+
+    template <typename... U>
+    friend class log11_detail::LogStreamStatement;
 };
 
 template <typename TArg, typename... TArgs>
@@ -371,6 +468,67 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
     else
         m_messageFifo.tryPublish(claimed);
 }
+
+template <typename... TArgs, int... TIndices>
+void Logger::doLogStream(ClaimPolicy policy, Severity severity,
+                         const LOG11_STD::tuple<TArgs...>& stream,
+                         LOG11_STD::integer_sequence<int, TIndices...>)
+{
+    using namespace LOG11_STD;
+    using namespace log11_detail;
+
+    static_assert(sizeof...(TArgs) > 0, "Cannot log an empty stream");
+    static_assert(all_serializable<typename decay<TArgs>::type...>::value,
+                  "Unsuitable type for string interpolation");
+
+    if (severity < m_severityThreshold)
+        return;
+
+    auto serdes = Serdes<void*,
+                         typename decay<TArgs>::type...>::instance();
+    auto argSlots = (serdes->requiredSize(nullptr, get<TIndices>(stream)...)
+                     + sizeof(LogStatement) - 1) / sizeof(LogStatement);
+
+    auto claimed = policy == Block ? m_messageFifo.claim(1 + argSlots)
+                                   : m_messageFifo.tryClaim(1 + argSlots,
+                                                            policy == Truncate);
+    if (claimed.length == 0)
+        return;
+
+    auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(severity, nullptr);
+    stmt->m_extensionType = 2;
+    if (claimed.length > 1)
+    {
+        argSlots = claimed.length - 1;
+        stmt->m_extensionSize = argSlots;
+        serdes->serialize(
+                    m_messageFifo,
+                    m_messageFifo.byteRange(
+                            RingBuffer::Range(claimed.begin + 1, argSlots)),
+                    serdes, get<TIndices>(stream)...);
+    }
+
+    if (policy == Block)
+        m_messageFifo.publish(claimed);
+    else
+        m_messageFifo.tryPublish(claimed);
+}
+
+namespace log11_detail
+{
+
+template <typename... T>
+LogStreamStatement<T...>::~LogStreamStatement()
+{
+    if (!m_active)
+        return;
+
+    m_logger->doLogStream(
+                Logger::Block, static_cast<Severity>(m_severity),
+                m_data, LOG11_STD::make_integer_sequence<int, sizeof...(T)>());
+}
+
+} // namespace log11_detail
 
 } // namespace log11
 

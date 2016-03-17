@@ -289,6 +289,11 @@ void Logger::setSink(Sink* sink) noexcept
     m_sink = sink;
 }
 
+log11_detail::LogStreamStatement<> Logger::log(Severity severity)
+{
+    return log11_detail::LogStreamStatement<>(this, severity);
+}
+
 void Logger::doLog(ClaimPolicy policy, Severity severity, const char* message)
 {
     if (severity < m_severityThreshold)
@@ -325,7 +330,7 @@ void Logger::consumeFifoEntries()
             }
 
             auto stmt = static_cast<LogStatement*>(m_messageFifo[available.begin]);
-            if (!stmt->m_message)
+            if (!stmt->m_message && stmt->m_extensionType == 0)
                 return;
 
             sink->beginLogEntry(static_cast<Severity>(stmt->m_severity));
@@ -339,7 +344,7 @@ void Logger::consumeFifoEntries()
                 --available.length;
                 m_messageFifo.consume(1);
             }
-            else
+            else if (stmt->m_extensionType == 1)
             {
                 SerdesBase* serdes
                         = stmt->m_extensionSize
@@ -385,6 +390,26 @@ void Logger::consumeFifoEntries()
                 available.length -= 1 + stmt->m_extensionSize;
                 m_messageFifo.consume(1 + stmt->m_extensionSize);
             }
+            else
+            {
+                SerdesBase* serdes
+                        = stmt->m_extensionSize
+                          ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1])
+                          : nullptr;
+                auto byteRange = m_messageFifo.byteRange(
+                                     RingBuffer::Range(available.begin + 1,
+                                                       stmt->m_extensionSize));
+                auto numArgs = serdes->numArguments();
+                for (unsigned argCounter = 1; argCounter < numArgs; ++argCounter)
+                {
+                    serdes->apply(m_messageFifo, byteRange, argCounter, converter);
+                    sink->putChar(' ');
+                }
+
+                available.begin += 1 + stmt->m_extensionSize;
+                available.length -= 1 + stmt->m_extensionSize;
+                m_messageFifo.consume(1 + stmt->m_extensionSize);
+            }
 
             if (m_flags & AppendNewLine)
                 sink->putChar('\n');
@@ -394,6 +419,7 @@ void Logger::consumeFifoEntries()
 }
 
 
+static
 int numDecimalDigits(uint64_t x)
 {
     unsigned digits = 1;
@@ -448,7 +474,7 @@ void Logger::printHeader(LogStatement* stmt)
     auto hours = mins / 60;
     unsigned days = (hours / 24) % 10000;
 
-    memset(m_conversionBuffer, ' ', 29);
+    memset(m_conversionBuffer, ' ', sizeof(m_conversionBuffer));
     m_conversionBuffer[0] = '[';
     m_conversionBuffer[27] = ']';
     m_conversionBuffer[8] = ':';

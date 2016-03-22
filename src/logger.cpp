@@ -457,8 +457,7 @@ void Logger::printHeader(LogStatement* stmt)
         "DEBUG",
         "INFO ",
         "WARN ",
-        "ERROR",
-        "FATAL"
+        "ERROR"
     };
 
     using namespace LOG11_STD::chrono;

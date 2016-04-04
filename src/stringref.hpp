@@ -28,6 +28,7 @@
 #define LOG11_STRINGREF_HPP
 
 #include <cstddef>
+#include <cstring>
 
 
 namespace log11
@@ -36,6 +37,13 @@ namespace log11
 class StringRef
 {
 public:
+    explicit
+    StringRef(const char* str)
+        : m_data(str),
+          m_length(std::strlen(str))
+    {
+    }
+
     StringRef(const char* str, std::size_t length)
         : m_data(str),
           m_length(length)

@@ -15,8 +15,112 @@ public:
     void putString(const char* s) { cout << s; }
 };
 
-struct Formatter
+class Formatter
 {
+public:
+    Formatter();
+
+    //! Resets the formatter.
+    void reset();
+
+    //! Parses the format string starting with \p str. Returns a pointer past
+    //! the end of the format string.
+    const char* parse(const char* str);
+
+#define override
+
+    virtual
+    void visit(char value) override
+    {
+        if (m_type == Default)
+            m_type = Character;
+        printInteger(value);
+    }
+
+
+    virtual
+    void visit(signed char value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(unsigned char value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(short value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(unsigned short value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(int value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(unsigned value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(long value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(unsigned long value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(long long value) override
+    {
+        printInteger(value);
+    }
+
+    virtual
+    void visit(unsigned long long value) override
+    {
+        printInteger(value);
+    }
+
+    // TODO: floating point
+
+    virtual
+    void visit(const void* value) override
+    {
+        if (value)
+        {
+            if (m_type == Default)
+                m_type = Hex;
+            // TODO: base prefix, width, fill
+            printInteger(uintptr_t(value));
+            auto length = snprintf(m_logger.m_conversionBuffer, sizeof(m_logger.m_conversionBuffer),
+                                   "0x%08lx", uintptr_t(value));
+            m_logger.m_sink.load()->putString(m_logger.m_conversionBuffer, length);
+        }
+        else
+        {
+            m_logger.m_sink.load()->putString("<null>", 6);
+        }
+    }
+
+
+private:
     enum Alignment
     {
         AutoAlign,
@@ -46,7 +150,8 @@ struct Formatter
         // TODO: Float types
     };
 
-    // Format spec
+    // Filled when parsing the format specification.
+    int m_argumentIndex;
     int m_width;
     int m_precision;
     char m_fill;
@@ -56,41 +161,32 @@ struct Formatter
     bool m_upperCase;
     Type m_type;
 
-
+    // Additional state for printing.
     bool m_isNegative;
     int m_padding;
 
     TempSink* m_sink;
 
-    Formatter();
-
-    //! Resets the formatter.
-    void reset();
-
-    //! Parses the format string starting with \p str. Returns a pointer past
-    //! the end of the format string.
-    const char* parse(const char* str);
-
 
     template <typename T>
-    typename std::enable_if<std::is_integral<T>::value && !std::is_signed<T>::value>::type
-    print(T value)
+    typename std::enable_if<!std::is_signed<T>::value>::type
+    printInteger(T value)
     {
-        printInteger(value);
+        doPrintInteger(value);
     }
 
     template <typename T>
-    typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value>::type
-    print(T value)
+    typename std::enable_if<std::is_signed<T>::value>::type
+    printInteger(T value)
     {
         if (value > 0)
         {
-            printInteger(value);
+            doPrintInteger(value);
         }
         else
         {
             m_isNegative = true;
-            printInteger(-value);
+            doPrintInteger(-value);
         }
     }
 
@@ -135,13 +231,13 @@ private:
         return std::make_pair(digits, mask);
     }
 
-    void printInteger(std::uint64_t value);
+    void doPrintInteger(std::uint64_t value);
     void printFloatFixedPoint(double value);
 
     void printPrePaddingAndSign();
 
     template <unsigned char Base>
-    void doPrintIntegerValue(std::uint64_t x, std::uint64_t mask)
+    void printIntegerInBase(std::uint64_t x, std::uint64_t mask)
     {
         while (mask)
         {
@@ -167,6 +263,7 @@ Formatter::Formatter()
 
 void Formatter::reset()
 {
+    m_argumentIndex = 0;
     m_width = 0;
     m_precision = 0;
     m_fill = ' ';
@@ -182,8 +279,24 @@ void Formatter::reset()
 
 const char* Formatter::parse(const char* str)
 {
-    if (!*str || *str == '}')
+    // argument index
+    while (*str >= '0' && *str <= '9')
+        m_argumentIndex = 10 * m_argumentIndex + (*str++ - '0');
+
+    switch (*str)
+    {
+    case '}':
         return str;
+    case ':':
+        ++str;
+        if (*str)
+            break;
+    default:
+        // TODO: print an error indicator
+        while (*str && *str != '}')
+            ++str;
+        return str;
+    }
 
     switch (str[1])
     {
@@ -245,8 +358,12 @@ const char* Formatter::parse(const char* str)
         // TODO: float formats
     }
 
-    while (*str && *str != '}')
-        ++str;
+    if (*str != '}')
+    {
+        // TODO: print an error indicator
+        while (*str && *str != '}')
+            ++str;
+    }
 
     return str;
 }
@@ -254,15 +371,15 @@ const char* Formatter::parse(const char* str)
 
 void Formatter::printPrePaddingAndSign()
 {
-    if (m_isNegative || m_sign != Formatter::OnlyNegative)
+    if (m_isNegative || m_sign != OnlyNegative)
         --m_padding;
 
-    if (m_align == Formatter::Right)
+    if (m_align == Right)
     {
         while (m_padding-- > 0)
             m_sink->putChar(m_fill);
     }
-    else if (m_align == Formatter::Centered)
+    else if (m_align == Centered)
     {
         for (int count = 0; count < (m_padding + 1) / 2; ++count)
             m_sink->putChar(m_fill);
@@ -277,30 +394,33 @@ void Formatter::printPrePaddingAndSign()
     {
         switch (m_sign)
         {
-        case Formatter::SpaceForPositive: m_sink->putChar(' '); break;
-        case Formatter::Always: m_sink->putChar('+'); break;
+        case SpaceForPositive: m_sink->putChar(' '); break;
+        case Always: m_sink->putChar('+'); break;
         default: break;
         }
     }
 
-    if (m_align == Formatter::AlignAfterSign)
+    if (m_align == AlignAfterSign)
         while (m_padding-- > 0)
             m_sink->putChar(m_fill);
 }
 
-void Formatter::printInteger(std::uint64_t value)
+void Formatter::doPrintInteger(std::uint64_t value)
 {
-    if (m_align == Formatter::AutoAlign)
-        m_align = Formatter::Right;
+    using namespace std;
 
-    std::pair<int, std::uint64_t> digitsMask;
+    if (m_align == AutoAlign)
+        m_align = Right;
+
+    pair<int, uint64_t> digitsMask;
     switch (m_type)
     {
-    case Formatter::Binary: digitsMask = getDigitsAndMask<2>(value); break;
+    case Binary: digitsMask = getDigitsAndMask<2>(value); break;
+    case Character: digitsMask = pair<int, uint64_t>(1, 0); break;
     default:
-    case Formatter::Decimal: digitsMask = getDigitsAndMask<10>(value); break;
-    case Formatter::Octal: digitsMask = getDigitsAndMask<8>(value); break;
-    case Formatter::Hex: digitsMask = getDigitsAndMask<16>(value); break;
+    case Decimal: digitsMask = getDigitsAndMask<10>(value); break;
+    case Octal: digitsMask = getDigitsAndMask<8>(value); break;
+    case Hex: digitsMask = getDigitsAndMask<16>(value); break;
     }
 
     m_padding = m_width - digitsMask.first;
@@ -311,33 +431,40 @@ void Formatter::printInteger(std::uint64_t value)
 
     switch (m_type)
     {
-    case Formatter::Binary:
+    case Binary:
         if (m_basePrefix)
             m_sink->putString("0b");
-        doPrintIntegerValue<2>(value, digitsMask.second);
+        printIntegerInBase<2>(value, digitsMask.second);
+        break;
+
+    case Character:
+        if (!m_isNegative && value < 255)
+            m_sink->putChar(value);
+        else
+            m_sink->putChar('?');
         break;
 
     default:
-    case Formatter::Decimal:
+    case Decimal:
         if (m_basePrefix)
             m_sink->putString("0d");
-        doPrintIntegerValue<10>(value, digitsMask.second);
+        printIntegerInBase<10>(value, digitsMask.second);
         break;
 
-    case Formatter::Octal:
+    case Octal:
         if (m_basePrefix)
             m_sink->putString("0o");
-        doPrintIntegerValue<8>(value, digitsMask.second);
+        printIntegerInBase<8>(value, digitsMask.second);
         break;
 
-    case Formatter::Hex:
+    case Hex:
         if (m_basePrefix)
             m_sink->putString("0x");
-        doPrintIntegerValue<16>(value, digitsMask.second);
+        printIntegerInBase<16>(value, digitsMask.second);
         break;
     }
 
-    if (m_align == Formatter::Left || m_align == Formatter::Centered)
+    if (m_align == Left || m_align == Centered)
         while (m_padding-- > 0)
             m_sink->putChar(m_fill);
 }
@@ -361,13 +488,13 @@ void Formatter::printFloatFixedPoint(double value)
     std::pair<int, std::uint64_t> digitsMask = getDigitsAndMask<10>(integer);
     m_padding = m_width - digitsMask.first - m_precision - 1;
     printPrePaddingAndSign();
-    doPrintIntegerValue<10>(integer, digitsMask.second);
+    printIntegerInBase<10>(integer, digitsMask.second);
     m_sink->putChar('.');
 
     digitsMask = getDigitsAndMask<10>(fraction);
     for (int count = digitsMask.first; count < m_precision; ++count)
         m_sink->putChar('0');
-    doPrintIntegerValue<10>(fraction, digitsMask.second);
+    printIntegerInBase<10>(fraction, digitsMask.second);
 }
 
 

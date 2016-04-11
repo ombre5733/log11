@@ -236,9 +236,58 @@ public:
     //! \endcode
     log11_detail::LogStreamStatement<> log(Severity severity);
 
+    // trace()
+
+    //! \brief A convenience function for trace log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(Severity::Trace, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void trace(const char* message, TArgs&&... args)
+    {
+        doLog(Block, Severity::Trace, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for trace log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_discard, Severity::Trace, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void trace(may_discard_t, const char* message, TArgs&&... args)
+    {
+        doLog(Discard, Severity::Trace, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for trace log entries.
+    //!
+    //! This function is equivalent to calling
+    //! \code
+    //! log(may_truncate, Severity::Trace, message, args...);
+    //! \endcode
+    template <typename... TArgs>
+    void trace(may_truncate_t, const char* message, TArgs&&... args)
+    {
+        doLog(Truncate, Severity::Trace, message, LOG11_STD::forward<TArgs>(args)...);
+    }
+
+    //! \brief A convenience function for trace streams.
+    //!
+    //! Creates a trace stream equivalent to
+    //! \code
+    //! log(Severity::Trace)
+    //! \endcode
+    log11_detail::LogStreamStatement<> trace()
+    {
+        return log(Severity::Trace);
+    }
+
     // debug()
 
-    //! \brief A convenience function for info log entries.
+    //! \brief A convenience function for debug log entries.
     //!
     //! This function is equivalent to calling
     //! \code
@@ -250,7 +299,7 @@ public:
         doLog(Block, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
     }
 
-    //! \brief A convenience function for info log entries.
+    //! \brief A convenience function for debug log entries.
     //!
     //! This function is equivalent to calling
     //! \code
@@ -262,7 +311,7 @@ public:
         doLog(Discard, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
     }
 
-    //! \brief A convenience function for info log entries.
+    //! \brief A convenience function for debug log entries.
     //!
     //! This function is equivalent to calling
     //! \code

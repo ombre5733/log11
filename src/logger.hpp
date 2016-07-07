@@ -33,23 +33,20 @@
 #include "severity.hpp"
 
 #ifdef LOG11_USE_WEOS
-#include <weos/atomic.hpp>
-#include <weos/chrono.hpp>
-#include <weos/condition_variable.hpp>
 #include <weos/thread.hpp>
-#include <weos/type_traits.hpp>
 #include <weos/utility.hpp>
 #else
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <type_traits>
 #include <utility>
 #endif // LOG11_USE_WEOS
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <new>
+#include <type_traits>
+
 
 namespace log11
 {
@@ -88,10 +85,10 @@ public:
     }
 
     template <typename TArg>
-    LogStreamStatement<typename LOG11_STD::decay<TArg>::type>
+    LogStreamStatement<typename std::decay<TArg>::type>
     operator<<(TArg&& arg)
     {
-        using namespace LOG11_STD;
+        using namespace std;
         return LogStreamStatement<typename decay<TArg>::type>(
                     *this, forward<TArg>(arg));
     }
@@ -111,10 +108,10 @@ public:
     ~LogStreamStatement();
 
     template <typename TArg>
-    LogStreamStatement<T..., typename LOG11_STD::decay<TArg>::type>
+    LogStreamStatement<T..., typename std::decay<TArg>::type>
     operator<<(TArg&& arg)
     {
-        using namespace LOG11_STD;
+        using namespace std;
         m_active = false;
         return LogStreamStatement<T..., typename decay<TArg>::type>(
                     *this, forward<TArg>(arg),
@@ -122,7 +119,7 @@ public:
     }
 
 private:
-    LOG11_STD::tuple<T...> m_data;
+    std::tuple<T...> m_data;
     Logger* m_logger;
     unsigned m_severity : 4;
     unsigned m_active : 1;
@@ -140,8 +137,8 @@ private:
     template <typename... T1, typename T2, int... TI>
     LogStreamStatement(const LogStreamStatement<T1...>& stmt,
                        T2&& tail,
-                       LOG11_STD::integer_sequence<int, TI...>)
-        : m_data(LOG11_STD::get<TI>(stmt.m_data)..., tail),
+                       std::integer_sequence<int, TI...>)
+        : m_data(std::get<TI>(stmt.m_data)..., tail),
           m_logger(stmt.m_logger),
           m_severity(stmt.m_severity),
           m_active(true)
@@ -177,8 +174,10 @@ class Logger
 
 public:
 #ifdef LOG11_USE_WEOS
+    explicit
     Logger(const weos::thread_attributes& attrs, std::size_t bufferSize);
 #else
+    explicit
     Logger(std::size_t bufferSize);
 #endif // LOG11_USE_WEOS
 
@@ -204,7 +203,7 @@ public:
     template <typename... TArgs>
     void log(Severity severity, const char* message, TArgs&&... args)
     {
-        doLog(Block, severity, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Block, severity, message, std::forward<TArgs>(args)...);
     }
 
     //! Logs the \p message interpolated with the \p args using the specified
@@ -214,7 +213,7 @@ public:
     void log(may_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        doLog(Discard, severity, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Discard, severity, message, std::forward<TArgs>(args)...);
     }
 
     //! Logs the \p message interpolated with the \p args using the specified
@@ -225,7 +224,7 @@ public:
     void log(may_truncate_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        doLog(Truncate, severity, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Truncate, severity, message, std::forward<TArgs>(args)...);
     }
 
     //! Creates a log stream with the given \p severity. The resulting object
@@ -247,7 +246,7 @@ public:
     template <typename... TArgs>
     void trace(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Trace, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Block, Severity::Trace, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for trace log entries.
@@ -259,7 +258,7 @@ public:
     template <typename... TArgs>
     void trace(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Trace, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Discard, Severity::Trace, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for trace log entries.
@@ -271,7 +270,7 @@ public:
     template <typename... TArgs>
     void trace(may_truncate_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Trace, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Truncate, Severity::Trace, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for trace streams.
@@ -296,7 +295,7 @@ public:
     template <typename... TArgs>
     void debug(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Block, Severity::Debug, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for debug log entries.
@@ -308,7 +307,7 @@ public:
     template <typename... TArgs>
     void debug(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Discard, Severity::Debug, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for debug log entries.
@@ -320,7 +319,7 @@ public:
     template <typename... TArgs>
     void debug(may_truncate_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Debug, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Truncate, Severity::Debug, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for debug streams.
@@ -345,7 +344,7 @@ public:
     template <typename... TArgs>
     void info(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Block, Severity::Info, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for info log entries.
@@ -357,7 +356,7 @@ public:
     template <typename... TArgs>
     void info(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Discard, Severity::Info, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for info log entries.
@@ -369,7 +368,7 @@ public:
     template <typename... TArgs>
     void info(may_truncate_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Info, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Truncate, Severity::Info, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for info streams.
@@ -394,7 +393,7 @@ public:
     template <typename... TArgs>
     void warn(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Block, Severity::Warn, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for warning log entries.
@@ -406,7 +405,7 @@ public:
     template <typename... TArgs>
     void warn(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Discard, Severity::Warn, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for warning log entries.
@@ -418,7 +417,7 @@ public:
     template <typename... TArgs>
     void warn(may_truncate_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Warn, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Truncate, Severity::Warn, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for warning streams.
@@ -443,7 +442,7 @@ public:
     template <typename... TArgs>
     void error(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Block, Severity::Error, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for error log entries.
@@ -455,7 +454,7 @@ public:
     template <typename... TArgs>
     void error(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Discard, Severity::Error, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for error log entries.
@@ -467,7 +466,7 @@ public:
     template <typename... TArgs>
     void error(may_truncate_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Error, message, LOG11_STD::forward<TArgs>(args)...);
+        doLog(Truncate, Severity::Error, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for error streams.
@@ -489,9 +488,9 @@ private:
     };
 
     RingBuffer m_messageFifo;
-    LOG11_STD::atomic_int m_flags;
-    LOG11_STD::atomic<Sink*> m_sink;
-    LOG11_STD::atomic<Severity> m_severityThreshold;
+    std::atomic_int m_flags;
+    std::atomic<Sink*> m_sink;
+    std::atomic<Severity> m_severityThreshold;
 
     char m_conversionBuffer[32];
 
@@ -504,8 +503,8 @@ private:
 
     template <typename... TArgs, int... TIndices>
     void doLogStream(ClaimPolicy policy, Severity severity,
-                     const LOG11_STD::tuple<TArgs...>& stream,
-                     LOG11_STD::integer_sequence<int, TIndices...>);
+                     const std::tuple<TArgs...>& stream,
+                     std::integer_sequence<int, TIndices...>);
 
     void consumeFifoEntries();
     void printHeader(log11_detail::LogStatement* stmt);
@@ -521,7 +520,7 @@ template <typename TArg, typename... TArgs>
 void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
                    TArg&& arg, TArgs&&... args)
 {
-    using namespace LOG11_STD;
+    using namespace std;
     using namespace log11_detail;
 
     static_assert(all_serializable<typename decay<TArg>::type,
@@ -564,10 +563,10 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
 
 template <typename... TArgs, int... TIndices>
 void Logger::doLogStream(ClaimPolicy policy, Severity severity,
-                         const LOG11_STD::tuple<TArgs...>& stream,
-                         LOG11_STD::integer_sequence<int, TIndices...>)
+                         const std::tuple<TArgs...>& stream,
+                         std::integer_sequence<int, TIndices...>)
 {
-    using namespace LOG11_STD;
+    using namespace std;
     using namespace log11_detail;
 
     static_assert(sizeof...(TArgs) > 0, "Cannot log an empty stream");
@@ -618,7 +617,7 @@ LogStreamStatement<T...>::~LogStreamStatement()
 
     m_logger->doLogStream(
                 Logger::Block, static_cast<Severity>(m_severity),
-                m_data, LOG11_STD::make_integer_sequence<int, sizeof...(T)>());
+                m_data, std::make_integer_sequence<int, sizeof...(T)>());
 }
 
 } // namespace log11_detail

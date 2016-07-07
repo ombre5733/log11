@@ -227,7 +227,7 @@ private:
 // ----=====================================================================----
 
 LogStatement::LogStatement(Severity severity, const char* msg)
-    : m_timeStamp(LOG11_STD::chrono::high_resolution_clock::now().time_since_epoch().count()),
+    : m_timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
       m_message(msg),
       m_extensionSize(0),
       m_extensionType(0),
@@ -460,7 +460,7 @@ void Logger::printHeader(LogStatement* stmt)
         "ERROR"
     };
 
-    using namespace LOG11_STD::chrono;
+    using namespace std::chrono;
 
     Sink* sink = m_sink;
     if (!sink)

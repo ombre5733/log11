@@ -27,6 +27,7 @@
 #include "ringbuffer.hpp"
 
 #include <cstring>
+#include <mutex>
 
 
 using namespace log11;
@@ -59,8 +60,8 @@ auto RingBuffer::claim(unsigned numElements) -> Range
     {
         // Wait until the consumer has made progress.
         // TODO: Make this faster.
-        LOG11_STD::mutex dummy;
-        LOG11_STD::unique_lock<LOG11_STD::mutex> dummyLock(dummy);
+        std::mutex dummy;
+        std::unique_lock<std::mutex> dummyLock(dummy);
         m_progressSignal.wait(dummyLock, [&] {
             return int(m_consumed - consumerThreshold) >= 0;
         });
@@ -95,8 +96,8 @@ void RingBuffer::publish(const Range& range)
     {
         // Wait until the other producers have made progress.
         // TODO: Make this faster.
-        LOG11_STD::mutex dummy;
-        LOG11_STD::unique_lock<LOG11_STD::mutex> dummyLock(dummy);
+        std::mutex dummy;
+        std::unique_lock<std::mutex> dummyLock(dummy);
         m_progressSignal.wait(dummyLock, [&] {
             return m_published == range.begin;
         });
@@ -120,8 +121,8 @@ auto RingBuffer::available() const noexcept -> Range
     while (free <= 0)
     {
         // Wait until a producer has made progress.
-        LOG11_STD::mutex dummy;
-        LOG11_STD::unique_lock<LOG11_STD::mutex> dummyLock(dummy);
+        std::mutex dummy;
+        std::unique_lock<std::mutex> dummyLock(dummy);
         m_progressSignal.wait(dummyLock, [&] () -> bool {
             free = m_published - m_consumed;
             return free > 0;

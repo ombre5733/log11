@@ -46,10 +46,8 @@
 // ----=====================================================================----
 
 #ifdef LOG11_USE_WEOS
-    #define LOG11_STD   weos
     #define LOG11_EXCEPTION(x)   WEOS_EXCEPTION(x)
 #else
-    #define LOG11_STD   std
     #define LOG11_EXCEPTION(x)   x
 #endif // LOG11_USE_WEOS
 

@@ -29,14 +29,8 @@
 
 #include "config.hpp"
 
-#ifdef LOG11_USE_WEOS
-#include <weos/atomic.hpp>
-#include <weos/condition_variable.hpp>
-#else
 #include <atomic>
 #include <condition_variable>
-#endif // LOG11_USE_WEOS
-
 #include <utility>
 
 
@@ -143,14 +137,14 @@ private:
     unsigned m_totalNumElements;
 
     //! Points past the last claimed slot.
-    LOG11_STD::atomic<unsigned> m_claimed;
+    std::atomic<unsigned> m_claimed;
     //! Points past the last published slot.
-    LOG11_STD::atomic<unsigned> m_published;
+    std::atomic<unsigned> m_published;
     //! Points past the last consumed slot.
-    LOG11_STD::atomic<unsigned> m_consumed;
+    std::atomic<unsigned> m_consumed;
 
     //! A signal which indicates progress in the producers or consumer.
-    mutable LOG11_STD::condition_variable m_progressSignal;
+    mutable std::condition_variable m_progressSignal;
 };
 
 } // namespace log11

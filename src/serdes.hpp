@@ -32,12 +32,7 @@
 
 #include <cstddef>
 #include <utility>
-
-#ifdef LOG11_USE_WEOS
-#include <weos/type_traits.hpp>
-#else
 #include <type_traits>
-#endif // LOG11_USE_WEOS
 
 
 namespace log11
@@ -56,14 +51,14 @@ struct is_member;
 
 template <typename T, typename TH, typename... TL>
 struct is_member<T, TypeList<TH, TL...>>
-        : LOG11_STD::conditional<LOG11_STD::is_same<T, TH>::value,
-                                 LOG11_STD::true_type,
-                                 is_member<T, TypeList<TL...>>>::type
+        : std::conditional<std::is_same<T, TH>::value,
+                           std::true_type,
+                           is_member<T, TypeList<TL...>>>::type
 {
 };
 
 template <typename T>
-struct is_member<T, TypeList<>> : LOG11_STD::false_type {};
+struct is_member<T, TypeList<>> : std::false_type {};
 
 
 
@@ -90,18 +85,18 @@ template <typename T>
 struct is_serializable : is_member<T, serializable_types> {};
 
 template <typename T>
-struct is_serializable<T*> : LOG11_STD::true_type {};
+struct is_serializable<T*> : std::true_type {};
 
 
 
 template <typename... T>
-struct all_serializable : LOG11_STD::true_type {};
+struct all_serializable : std::true_type {};
 
 template <typename TH, typename... TL>
 struct all_serializable<TH, TL...>
-        : LOG11_STD::conditional<is_serializable<TH>::value != false,
-                                 all_serializable<TL...>,
-                                 LOG11_STD::false_type>::type
+        : std::conditional<is_serializable<TH>::value != false,
+                           all_serializable<TL...>,
+                           std::false_type>::type
 {
 };
 

@@ -27,16 +27,14 @@
 #ifndef LOG11_LOGGER_HPP
 #define LOG11_LOGGER_HPP
 
-#include "config.hpp"
-#include "ringbuffer.hpp"
-#include "serdes.hpp"
-#include "severity.hpp"
+#include "_config.hpp"
+#include "RingBuffer.hpp"
+#include "SerDes.hpp"
+#include "Severity.hpp"
 
 #ifdef LOG11_USE_WEOS
 #include <weos/thread.hpp>
 #include <weos/utility.hpp>
-#else
-#include <utility>
 #endif // LOG11_USE_WEOS
 
 #include <atomic>
@@ -46,6 +44,7 @@
 #include <cstdint>
 #include <new>
 #include <type_traits>
+#include <utility>
 
 
 namespace log11

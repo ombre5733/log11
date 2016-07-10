@@ -24,8 +24,8 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#include "logger.hpp"
-#include "sink.hpp"
+#include "Logger.hpp"
+#include "Sink.hpp"
 
 #include <cstdint>
 #include <cstring>

@@ -27,7 +27,7 @@
 #ifndef LOG11_RINGBUFFER_HPP
 #define LOG11_RINGBUFFER_HPP
 
-#include "config.hpp"
+#include "_config.hpp"
 
 #include <atomic>
 #include <condition_variable>

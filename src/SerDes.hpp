@@ -27,8 +27,8 @@
 #ifndef LOG11_SERDES_HPP
 #define LOG11_SERDES_HPP
 
-#include "ringbuffer.hpp"
-#include "stringref.hpp"
+#include "RingBuffer.hpp"
+#include "StringRef.hpp"
 
 #include <cstddef>
 #include <utility>

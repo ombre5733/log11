@@ -24,7 +24,7 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#include "ringbuffer.hpp"
+#include "RingBuffer.hpp"
 
 #include <cstring>
 #include <mutex>

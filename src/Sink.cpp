@@ -24,47 +24,24 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_STRINGREF_HPP
-#define LOG11_STRINGREF_HPP
+#include "Sink.hpp"
 
-#include <cstddef>
-#include <cstring>
+using namespace log11;
 
-
-namespace log11
+Sink::~Sink()
 {
+}
 
-class StringRef
+void Sink::beginLogEntry(Severity /*severity*/)
 {
-public:
-    explicit
-    StringRef(const char* str)
-        : m_data(str),
-          m_length(std::strlen(str))
-    {
-    }
+}
 
-    StringRef(const char* str, std::size_t length)
-        : m_data(str),
-          m_length(length)
-    {
-    }
+void Sink::endLogEntry()
+{
+}
 
-    const char* data() const noexcept
-    {
-        return m_data;
-    }
-
-    std::size_t size() const noexcept
-    {
-        return m_length;
-    }
-
-private:
-    const char* m_data;
-    std::size_t m_length;
-};
-
-} // namespace log11
-
-#endif // LOG11_STRINGREF_HPP
+void Sink::putString(const char* text, std::size_t size)
+{
+    while (size--)
+        putChar(*text++);
+}

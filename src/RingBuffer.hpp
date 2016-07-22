@@ -110,7 +110,7 @@ public:
     // Consumer interface
 
     //! Returns the range of slots which can be consumed.
-    Range available() const noexcept;
+    Range wait() const noexcept;
 
     //! Consumes \p numEntries slots.
     void consume(unsigned numEntries) noexcept;
@@ -143,8 +143,13 @@ private:
     //! Points past the last consumed slot.
     std::atomic<unsigned> m_consumed;
 
+#ifdef LOG11_USE_WEOS
+    mutable weos::synchronic<unsigned> m_consumerProgress;
+    mutable weos::synchronic<unsigned> m_producerProgress;
+#else
     //! A signal which indicates progress in the producers or consumer.
     mutable std::condition_variable m_progressSignal;
+#endif
 };
 
 } // namespace log11

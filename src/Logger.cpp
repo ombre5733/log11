@@ -318,7 +318,7 @@ void Logger::consumeFifoEntries()
 
     while ((m_flags & StopRequest) == 0)
     {
-        auto available = m_messageFifo.available();
+        auto available = m_messageFifo.wait();
         while ((m_flags & StopRequest) == 0 && available.length)
         {
             // If no sink is attached to the logger, consume all FIFO entries.

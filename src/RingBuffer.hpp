@@ -33,6 +33,9 @@
 #include <condition_variable>
 #include <utility>
 
+#ifndef LOG11_USE_WEOS
+#include "_synchronic.hpp"
+#endif // LOG11_USE_WEOS
 
 namespace log11
 {
@@ -144,12 +147,13 @@ private:
     std::atomic<unsigned> m_consumed;
 
 #ifdef LOG11_USE_WEOS
-    mutable weos::synchronic<unsigned> m_consumerProgress;
-    mutable weos::synchronic<unsigned> m_producerProgress;
+    using synchronic = weos::synchronic<unsigned>;
 #else
-    //! A signal which indicates progress in the producers or consumer.
-    mutable std::condition_variable m_progressSignal;
+    using synchronic = log11_detail::synchronic<unsigned>;
 #endif
+
+    mutable synchronic m_consumerProgress;
+    mutable synchronic m_producerProgress;
 };
 
 } // namespace log11

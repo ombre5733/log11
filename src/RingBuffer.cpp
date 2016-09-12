@@ -26,7 +26,6 @@
 
 #include "RingBuffer.hpp"
 
-#include <chrono>
 #include <cstring>
 #include <mutex>
 
@@ -58,24 +57,12 @@ auto RingBuffer::claim(unsigned numElements) -> Range
     // Wait until the claimed elements are free (the consumer has made enough
     // progress).
     unsigned consumerThreshold = claimEnd - m_totalNumElements;
-#ifdef LOG11_USE_WEOS
     if (int(m_consumed - consumerThreshold) < 0)
     {
         m_consumerProgress.expect(
                     m_consumed,
-                    [&] { return int(m_consumed - consumerThreshold) >= 0 });
-    }
-#else
-    while (int(m_consumed - consumerThreshold) < 0)
-    {
-        std::mutex dummy;
-        std::unique_lock<std::mutex> dummyLock(dummy);
-        m_progressSignal.wait_for(
-                    dummyLock,
-                    std::chrono::system_clock::duration(1),
                     [&] { return int(m_consumed - consumerThreshold) >= 0; });
     }
-#endif // LOG11_USE_WEOS
 
     return Range(claimEnd - numElements, numElements);
 }
@@ -102,26 +89,10 @@ auto RingBuffer::tryClaim(unsigned numElements, bool allowTruncation) -> Range
 
 void RingBuffer::publish(const Range& range)
 {
-#ifdef LOG11_USE_WEOS
     // Wait until the other producers have made progress.
     m_producerProgress.expect(m_published, range.begin);
     // Publish the given range.
     m_producerProgress.notify(m_published, range.begin + range.length);
-#else
-    // Wait until the other producers have made progress.
-    while (m_published != range.begin)
-    {
-        std::mutex dummy;
-        std::unique_lock<std::mutex> dummyLock(dummy);
-        m_progressSignal.wait_for(
-                    dummyLock,
-                    std::chrono::system_clock::duration(1),
-                    [&] { return m_published == range.begin; });
-    }
-    // Publish the given range.
-    m_published = range.begin + range.length;
-    m_progressSignal.notify_all();
-#endif
 }
 
 void RingBuffer::tryPublish(const Range& range)
@@ -134,39 +105,19 @@ void RingBuffer::tryPublish(const Range& range)
 
 auto RingBuffer::wait() const noexcept -> Range
 {
-#ifdef LOG11_USE_WEOS
     if (int(m_published - m_consumed) <= 0)
     {
         // Wait until the producers have made progress.
         m_producerProgress.expect(
                     m_published,
-                    [&] { return int(m_published - m_consumed) > 0; })
-    }
-#else
-    // Wait until the producers have made progress.
-    while (int(m_published - m_consumed) <= 0)
-    {
-        // Wait until a producer has made progress.
-        std::mutex dummy;
-        std::unique_lock<std::mutex> dummyLock(dummy);
-        m_progressSignal.wait_for(
-                    dummyLock,
-                    std::chrono::system_clock::duration(1),
                     [&] { return int(m_published - m_consumed) > 0; });
     }
-#endif // LOG11_USE_WEOS
-
     return Range(m_consumed, m_published - m_consumed);
 }
 
 void RingBuffer::consume(unsigned numEntries) noexcept
 {
-#ifdef LOG11_USE_WEOS
     m_consumerProgress.notify(m_consumed, m_consumed + numEntries);
-#else
-    m_consumed += numEntries;
-    m_progressSignal.notify_all();
-#endif // LOG11_USE_WEOS
 }
 
 

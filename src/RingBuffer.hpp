@@ -33,7 +33,9 @@
 #include <condition_variable>
 #include <utility>
 
-#ifndef LOG11_USE_WEOS
+#ifdef LOG11_USE_WEOS
+#include <weos/synchronic.hpp>
+#else
 #include "_synchronic.hpp"
 #endif // LOG11_USE_WEOS
 

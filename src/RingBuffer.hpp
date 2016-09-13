@@ -33,7 +33,7 @@
 #include <condition_variable>
 #include <utility>
 
-#ifdef LOG11_USE_WEOS
+#if defined(LOG11_USE_WEOS) && !defined(FREM_GEN_RUN)
 #include <weos/synchronic.hpp>
 #else
 #include "_synchronic.hpp"
@@ -148,7 +148,7 @@ private:
     //! Points past the last consumed slot.
     std::atomic<unsigned> m_consumed;
 
-#ifdef LOG11_USE_WEOS
+#if defined(LOG11_USE_WEOS) && !defined(FREM_GEN_RUN)
     using synchronic = weos::synchronic<unsigned>;
 #else
     using synchronic = log11_detail::synchronic<unsigned>;

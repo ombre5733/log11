@@ -26,7 +26,12 @@
 
 #include "RingBuffer.hpp"
 
+#if defined(LOG11_USE_WEOS)
+#include <weos/iterator.hpp>
+#endif // LOG11_USE_WEOS
+
 #include <cstring>
+#include <iterator>
 #include <mutex>
 
 
@@ -37,8 +42,12 @@ RingBuffer::RingBuffer(unsigned elementSize, unsigned size)
       m_totalNumElements((size + elementSize - 1) / elementSize),
       m_claimed(0),
       m_published(0),
-      m_consumed(0)
+      m_consumed(0),
+      m_stashCount(0)
 {
+    for (auto& stashed : m_stash)
+        stashed = 0;
+
     m_data = ::operator new(m_elementSize * m_totalNumElements);
 }
 
@@ -89,6 +98,25 @@ auto RingBuffer::tryClaim(unsigned numElements, bool allowTruncation) -> Range
 
 void RingBuffer::publish(const Range& range)
 {
+    for (;;)
+    {
+        // Fast path: Assume that this producer can publish its range.
+        unsigned expected = range.begin;
+        while (expected == range.begin)
+        {
+            if (m_published.compare_exchange_strong(expected, range.begin + range.length))
+            {
+                m_producerProgress.notify(m_published, [] {});
+                return;
+            }
+        }
+
+        // Try to make progress by applying a stashed range.
+        if (m_stashCount == 0 || !applyStash())
+            break;
+    }
+
+
     // Wait until the other producers have made progress.
     m_producerProgress.expect(m_published, range.begin);
     // Publish the given range.
@@ -97,14 +125,86 @@ void RingBuffer::publish(const Range& range)
 
 void RingBuffer::tryPublish(const Range& range)
 {
-    // TODO: Make this non-blocking.
-    publish(range);
+    // Squeeze the range into an unsigned.
+    unsigned modBegin = range.begin % (m_totalNumElements * m_elementSize);
+    unsigned compressedRange = (modBegin << (sizeof(unsigned) * 4)) + range.length;
+
+    for (;;)
+    {
+        // Fast path: Assume that this producer can publish its range.
+        unsigned expected = range.begin;
+        while (expected == range.begin)
+        {
+            if (m_published.compare_exchange_strong(expected, range.begin + range.length))
+            {
+                m_producerProgress.notify(m_published, [] {});
+                return;
+            }
+        }
+
+        // Try to make progress by applying a stashed range.
+        if (m_stashCount == 0 || !applyStash())
+            break;
+    }
+
+    // Save the compressed range to the stash.
+    for (auto& stashed : m_stash)
+    {
+        unsigned expected = 0;
+        while (expected == 0)
+        {
+            if (stashed.compare_exchange_strong(expected, compressedRange))
+            {
+                ++m_stashCount;
+                return;
+            }
+        }
+    }
+
+    // All stash slots have been taken.
+    std::terminate();
+}
+
+bool RingBuffer::applyStash() noexcept
+{
+    static constexpr unsigned length_mask = (1 << (sizeof(unsigned) * 4)) - 1;
+
+    bool madeProgress = false;
+    for (auto& stashed : m_stash)
+    {
+        unsigned compressedRange = stashed;
+        if (compressedRange == 0)
+            continue;
+
+        unsigned published = m_published;
+        while (compressedRange >> (sizeof(unsigned) * 4)
+               == published % (m_totalNumElements * m_elementSize))
+        {
+            unsigned newEnd = published + (compressedRange & length_mask);
+            if (m_published.compare_exchange_strong(published, newEnd))
+            {
+                stashed = 0;
+                --m_stashCount;
+                madeProgress = true;
+                break;
+            }
+        }
+    }
+
+    if (madeProgress)
+        m_producerProgress.notify(m_published, [] {});
+
+    return madeProgress;
 }
 
 
 
-auto RingBuffer::wait() const noexcept -> Range
+auto RingBuffer::wait() noexcept -> Range
 {
+    while (m_stashCount != 0 && applyStash())
+    {
+    }
+
     if (int(m_published - m_consumed) <= 0)
     {
         // Wait until the producers have made progress.

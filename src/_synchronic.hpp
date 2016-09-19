@@ -55,6 +55,13 @@ public:
         m_cv.notify_all();
     }
 
+    template <typename F>
+    void notify(atomic_type& /*object*/, F&& func)
+    {
+        func();
+        m_cv.notify_all();
+    }
+
     void expect(const atomic_type& object, T desired) const noexcept
     {
         std::unique_lock<std::mutex> lock(m_mutex);

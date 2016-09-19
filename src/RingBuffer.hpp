@@ -114,8 +114,9 @@ public:
 
     // Consumer interface
 
+    //! Waits until there is a range available for consumption.
     //! Returns the range of slots which can be consumed.
-    Range wait() const noexcept;
+    Range wait() noexcept;
 
     //! Consumes \p numEntries slots.
     void consume(unsigned numEntries) noexcept;
@@ -148,6 +149,11 @@ private:
     //! Points past the last consumed slot.
     std::atomic<unsigned> m_consumed;
 
+    //! Stashed ranges planned to be published.
+    std::atomic<unsigned> m_stash[8];
+    //! The number of stashed ranges.
+    std::atomic<unsigned> m_stashCount;
+
 #if defined(LOG11_USE_WEOS) && !defined(FREM_GEN_RUN)
     using synchronic = weos::synchronic<unsigned>;
 #else
@@ -156,6 +162,9 @@ private:
 
     mutable synchronic m_consumerProgress;
     mutable synchronic m_producerProgress;
+
+
+    bool applyStash() noexcept;
 };
 
 } // namespace log11

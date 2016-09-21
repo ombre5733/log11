@@ -174,10 +174,10 @@ class Logger
 public:
 #ifdef LOG11_USE_WEOS
     explicit
-    Logger(const weos::thread_attributes& attrs, std::size_t bufferSize);
+    Logger(const weos::thread_attributes& attrs, std::size_t bufferSizeExponent);
 #else
     explicit
-    Logger(std::size_t bufferSize);
+    Logger(std::size_t bufferSizeExponent);
 #endif // LOG11_USE_WEOS
 
     Logger(const Logger&) = delete;
@@ -532,12 +532,16 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
     auto serdes = Serdes<void*,
                          typename decay<TArg>::type,
                          typename decay<TArgs>::type...>::instance();
-    auto argSlots = (serdes->requiredSize(nullptr, arg, args...)
-                     + sizeof(LogStatement) - 1) / sizeof(LogStatement);
+    auto argSlots = serdes->requiredSize(nullptr, arg, args...);
 
-    auto claimed = policy == Block ? m_messageFifo.claim(1 + argSlots)
-                                   : m_messageFifo.tryClaim(1 + argSlots,
-                                                            policy == Truncate);
+    RingBuffer::Range claimed(0, 0);
+    if (policy == Block)
+        claimed = m_messageFifo.claim(sizeof(LogStatement) + argSlots);
+    else if (policy == Truncate)
+        claimed = m_messageFifo.tryClaim(sizeof(LogStatement), sizeof(LogStatement) + argSlots);
+    else
+        claimed = m_messageFifo.tryClaim(sizeof(LogStatement) + argSlots, sizeof(LogStatement) + argSlots);
+
     if (claimed.length == 0)
         return;
 
@@ -545,12 +549,12 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
     stmt->m_extensionType = 1;
     if (claimed.length > 1)
     {
-        argSlots = claimed.length - 1;
+        argSlots = claimed.length - sizeof(LogStatement);
         stmt->m_extensionSize = argSlots;
         serdes->serialize(
                 m_messageFifo,
                 m_messageFifo.byteRange(
-                        RingBuffer::Range(claimed.begin + 1, argSlots)),
+                        RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots)),
                 serdes, arg, args...);
     }
 
@@ -577,12 +581,16 @@ void Logger::doLogStream(ClaimPolicy policy, Severity severity,
 
     auto serdes = Serdes<void*,
                          typename decay<TArgs>::type...>::instance();
-    auto argSlots = (serdes->requiredSize(nullptr, get<TIndices>(stream)...)
-                     + sizeof(LogStatement) - 1) / sizeof(LogStatement);
+    auto argSlots = serdes->requiredSize(nullptr, get<TIndices>(stream)...);
 
-    auto claimed = policy == Block ? m_messageFifo.claim(1 + argSlots)
-                                   : m_messageFifo.tryClaim(1 + argSlots,
-                                                            policy == Truncate);
+    RingBuffer::Range claimed(0, 0);
+    if (policy == Block)
+        claimed = m_messageFifo.claim(sizeof(LogStatement) + argSlots);
+    else if (policy == Truncate)
+        claimed = m_messageFifo.tryClaim(sizeof(LogStatement), sizeof(LogStatement) + argSlots);
+    else
+        claimed = m_messageFifo.tryClaim(sizeof(LogStatement) + argSlots, sizeof(LogStatement) + argSlots);
+
     if (claimed.length == 0)
         return;
 
@@ -590,12 +598,12 @@ void Logger::doLogStream(ClaimPolicy policy, Severity severity,
     stmt->m_extensionType = 2;
     if (claimed.length > 1)
     {
-        argSlots = claimed.length - 1;
+        argSlots = claimed.length - sizeof(LogStatement);
         stmt->m_extensionSize = argSlots;
         serdes->serialize(
                     m_messageFifo,
                     m_messageFifo.byteRange(
-                            RingBuffer::Range(claimed.begin + 1, argSlots)),
+                            RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots)),
                     serdes, get<TIndices>(stream)...);
     }
 

@@ -31,15 +31,12 @@
 #endif // LOG11_USE_WEOS
 
 #include <cstring>
-#include <iterator>
-#include <mutex>
 
 
 using namespace log11;
 
-RingBuffer::RingBuffer(unsigned elementSize, unsigned size)
-    : m_elementSize(elementSize),
-      m_totalNumElements((size + elementSize - 1) / elementSize),
+RingBuffer::RingBuffer(unsigned exponent)
+    : m_size(1u << exponent),
       m_claimed(0),
       m_published(0),
       m_consumed(0),
@@ -48,7 +45,7 @@ RingBuffer::RingBuffer(unsigned elementSize, unsigned size)
     for (auto& stashed : m_stash)
         stashed = 0;
 
-    m_data = ::operator new(m_elementSize * m_totalNumElements);
+    m_data = ::operator new(m_size);
 }
 
 RingBuffer::~RingBuffer()
@@ -58,14 +55,14 @@ RingBuffer::~RingBuffer()
 
 auto RingBuffer::claim(unsigned numElements) -> Range
 {
-    if (numElements > m_totalNumElements)
-        numElements = m_totalNumElements;
+    if (numElements > m_size)
+        numElements = m_size;
 
     // Claim a sequence of elements.
     unsigned claimEnd = m_claimed += numElements;
     // Wait until the claimed elements are free (the consumer has made enough
     // progress).
-    unsigned consumerThreshold = claimEnd - m_totalNumElements;
+    unsigned consumerThreshold = claimEnd - m_size;
     if (int(m_consumed - consumerThreshold) < 0)
     {
         m_consumerProgress.expect(
@@ -76,21 +73,23 @@ auto RingBuffer::claim(unsigned numElements) -> Range
     return Range(claimEnd - numElements, numElements);
 }
 
-auto RingBuffer::tryClaim(unsigned numElements, bool allowTruncation) -> Range
+auto RingBuffer::tryClaim(unsigned minNumElements, unsigned maxNumElements) -> Range
 {
-    if (numElements > m_totalNumElements)
-        numElements = m_totalNumElements;
+    if (minNumElements > m_size)
+        minNumElements = m_size;
+    if (maxNumElements > m_size)
+        maxNumElements = m_size;
 
     unsigned claimBegin = m_claimed;
     int free;
     do
     {
         // Determine the number of available elements.
-        free = m_consumed - (claimBegin - m_totalNumElements);
-        if (free >= int(numElements))
-            free = numElements;
-        else if (free <= 0 || !allowTruncation)
+        free = m_consumed - (claimBegin - m_size);
+        if (free < int(minNumElements))
             return Range(0, 0);
+        if (free >= int(maxNumElements))
+            free = maxNumElements;
     } while (!m_claimed.compare_exchange_weak(claimBegin, claimBegin + free));
 
     return Range(claimBegin, free);
@@ -116,7 +115,6 @@ void RingBuffer::publish(const Range& range)
             break;
     }
 
-
     // Wait until the other producers have made progress.
     m_producerProgress.expect(m_published, range.begin);
     // Publish the given range.
@@ -126,7 +124,7 @@ void RingBuffer::publish(const Range& range)
 void RingBuffer::tryPublish(const Range& range)
 {
     // Squeeze the range into an unsigned.
-    unsigned modBegin = range.begin % (m_totalNumElements * m_elementSize);
+    unsigned modBegin = range.begin % m_size;
     unsigned compressedRange = (modBegin << (sizeof(unsigned) * 4)) + range.length;
 
     for (;;)
@@ -177,8 +175,7 @@ bool RingBuffer::applyStash() noexcept
             continue;
 
         unsigned published = m_published;
-        while (compressedRange >> (sizeof(unsigned) * 4)
-               == published % (m_totalNumElements * m_elementSize))
+        while (compressedRange >> (sizeof(unsigned) * 4) == published % m_size)
         {
             unsigned newEnd = published + (compressedRange & length_mask);
             if (m_published.compare_exchange_strong(published, newEnd))
@@ -215,22 +212,21 @@ auto RingBuffer::wait() noexcept -> Range
     return Range(m_consumed, m_published - m_consumed);
 }
 
-void RingBuffer::consume(unsigned numEntries) noexcept
+void RingBuffer::consume(unsigned numElements) noexcept
 {
-    m_consumerProgress.notify(m_consumed, m_consumed + numEntries);
+    m_consumerProgress.notify(m_consumed, m_consumed + numElements);
 }
 
 
 
 void* RingBuffer::operator[](unsigned index) noexcept
 {
-    return static_cast<char*>(m_data) + (index % m_totalNumElements) * m_elementSize;
+    return static_cast<char*>(m_data) + index % m_size;
 }
 
 auto RingBuffer::byteRange(const Range& range) const noexcept -> ByteRange
 {
-    unsigned begin = (range.begin % m_totalNumElements) * m_elementSize;
-    return ByteRange(begin, range.length * m_elementSize);
+    return ByteRange(range.begin, range.length);
 }
 
 auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) const -> ByteRange
@@ -240,8 +236,8 @@ auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) const -
     if (!size)
         return range;
 
-    unsigned begin = range.begin % (m_totalNumElements * m_elementSize);
-    unsigned restSize = m_totalNumElements * m_elementSize - begin;
+    unsigned begin = range.begin % m_size;
+    unsigned restSize = m_size - begin;
     if (size <= restSize)
     {
         std::memcpy(dest, static_cast<const char*>(m_data) + begin, size);
@@ -262,8 +258,8 @@ auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size
     if (!size)
         return range;
 
-    unsigned begin = range.begin % (m_totalNumElements * m_elementSize);
-    unsigned restSize = m_totalNumElements * m_elementSize - begin;
+    unsigned begin = range.begin % m_size;
+    unsigned restSize = m_size - begin;
     if (size <= restSize)
     {
         std::memcpy(static_cast<char*>(m_data) + begin, source, size);
@@ -279,8 +275,8 @@ auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size
 
 auto RingBuffer::unwrap(const ByteRange& range) const noexcept -> std::pair<Slice, Slice>
 {
-    unsigned begin = range.begin % (m_totalNumElements * m_elementSize);
-    unsigned restSize = m_totalNumElements * m_elementSize - begin;
+    unsigned begin = range.begin % m_size;
+    unsigned restSize = m_size - begin;
     if (range.length <= restSize)
     {
         return std::pair<Slice, Slice>(

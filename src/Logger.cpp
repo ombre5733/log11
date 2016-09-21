@@ -240,11 +240,11 @@ LogStatement::LogStatement(Severity severity, const char* msg)
 // ----=====================================================================----
 
 #ifdef LOG11_USE_WEOS
-Logger::Logger(const weos::thread_attributes& attrs, std::size_t bufferSize)
+Logger::Logger(const weos::thread_attributes& attrs, std::size_t bufferSizeExponent)
 #else
-Logger::Logger(std::size_t bufferSize)
+Logger::Logger(std::size_t bufferSizeExponent)
 #endif // LOG11_USE_WEOS
-    : m_messageFifo(sizeof(LogStatement), bufferSize),
+    : m_messageFifo(bufferSizeExponent),
       m_flags(AppendNewLine),
       m_sink{nullptr},
       m_severityThreshold{Severity::Info}
@@ -340,18 +340,18 @@ void Logger::consumeFifoEntries()
             {
                 sink->putString(stmt->m_message, std::strlen(stmt->m_message));
 
-                ++available.begin;
-                --available.length;
+                available.begin += sizeof(LogStatement);
+                available.length -= sizeof(LogStatement);
                 m_messageFifo.consume(1);
             }
             else if (stmt->m_extensionType == 1)
             {
                 SerdesBase* serdes
                         = stmt->m_extensionSize
-                          ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1])
+                          ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + sizeof(LogStatement)])
                           : nullptr;
                 auto byteRange = m_messageFifo.byteRange(
-                                     RingBuffer::Range(available.begin + 1,
+                                     RingBuffer::Range(available.begin + sizeof(LogStatement),
                                                        stmt->m_extensionSize));
 
                 // Interpret the format string.
@@ -386,18 +386,18 @@ void Logger::consumeFifoEntries()
                 if (iter != beginPos)
                     sink->putString(beginPos, iter - beginPos);
 
-                available.begin += 1 + stmt->m_extensionSize;
-                available.length -= 1 + stmt->m_extensionSize;
-                m_messageFifo.consume(1 + stmt->m_extensionSize);
+                available.begin += sizeof(LogStatement) + stmt->m_extensionSize;
+                available.length -= sizeof(LogStatement) + stmt->m_extensionSize;
+                m_messageFifo.consume(sizeof(LogStatement) + stmt->m_extensionSize);
             }
             else
             {
                 SerdesBase* serdes
                         = stmt->m_extensionSize
-                          ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + 1])
+                          ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + sizeof(LogStatement)])
                           : nullptr;
                 auto byteRange = m_messageFifo.byteRange(
-                                     RingBuffer::Range(available.begin + 1,
+                                     RingBuffer::Range(available.begin + sizeof(LogStatement),
                                                        stmt->m_extensionSize));
                 auto numArgs = serdes->numArguments();
                 for (unsigned argCounter = 1; argCounter < numArgs; ++argCounter)
@@ -407,9 +407,9 @@ void Logger::consumeFifoEntries()
                     sink->putChar(' ');
                 }
 
-                available.begin += 1 + stmt->m_extensionSize;
-                available.length -= 1 + stmt->m_extensionSize;
-                m_messageFifo.consume(1 + stmt->m_extensionSize);
+                available.begin += sizeof(LogStatement) + stmt->m_extensionSize;
+                available.length -= sizeof(LogStatement) + stmt->m_extensionSize;
+                m_messageFifo.consume(sizeof(LogStatement) + stmt->m_extensionSize);
             }
 
             if (m_flags & AppendNewLine)

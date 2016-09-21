@@ -80,10 +80,9 @@ public:
 
 
 
-    //! Creates a ring buffer whose slots are of size \p elementSize. The
-    //! total amount of memory occupied by the ring buffer is \p size (rounded
-    //! up to the next multiple of \p elementSize).
-    RingBuffer(unsigned elementSize, unsigned size);
+    //! Creates a ring buffer whose size is <tt>2^exponent</tt>.
+    explicit
+    RingBuffer(unsigned exponent);
 
     //! Destroys the ring buffer.
     ~RingBuffer();
@@ -93,33 +92,32 @@ public:
 
     // Producer interface
 
-    //! Claims \p numElements slots from the ring buffer. The caller is
-    //! blocked until the slots are free.
+    //! Claims \p numElements elements from the ring buffer. The caller is
+    //! blocked until the elements are free.
     Range claim(unsigned numElements);
 
-    //! Tries to claim \p numElements slots from the ring buffer without
-    //! blocking the caller. If the buffer is full, an empty range is
-    //! returned. When the number of available elements is less than
-    //! \p numElements, the behaviour depends on \p allowTruncation: If
-    //! the flag is set, a range smaller than \p numElements may be returned
-    //! otherwise, an empty range is returned.
-    Range tryClaim(unsigned numElements, bool allowTruncation);
+    //! Tries to claim between \p minNumElements and \p maxNumElements (both
+    //! sides inclusive) elements from the buffer. If less than
+    //! \p minNumElements elements are available, an empty range is returned.
+    Range tryClaim(unsigned minNumElements, unsigned maxNumElements);
 
-    //! Publishes the slots specified by the \p range. The range must have
+    //! Publishes the elements specified by the \p range. The range must have
     //! been claimed before publishing. The caller will be blocked until
     //! all prior producers have published their slots.
     void publish(const Range& range);
 
+    //! Tries to publish the elements specified by the \p range. If the ranges
+    //! are published out of order, they will be stashed.
     void tryPublish(const Range& range);
 
     // Consumer interface
 
     //! Waits until there is a range available for consumption.
-    //! Returns the range of slots which can be consumed.
+    //! Returns the range of elements which can be consumed.
     Range wait() noexcept;
 
-    //! Consumes \p numEntries slots.
-    void consume(unsigned numEntries) noexcept;
+    //! Consumes \p numElements elements.
+    void consume(unsigned numElements) noexcept;
 
     // Data access
 
@@ -137,10 +135,8 @@ public:
 private:
     //! The ring buffer's data.
     void* m_data;
-    //! The size of one slot in the buffer.
-    unsigned m_elementSize;
-    //! The total number of elements in the buffer.
-    unsigned m_totalNumElements;
+    //! The size of the ring buffer.
+    unsigned m_size;
 
     //! Points past the last claimed slot.
     std::atomic<unsigned> m_claimed;

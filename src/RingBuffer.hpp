@@ -47,18 +47,9 @@ class RingBuffer
 public:
     struct Range
     {
+        Range() = default;
+
         Range(unsigned b, unsigned l) noexcept
-            : begin(b), length(l)
-        {
-        }
-
-        unsigned begin;
-        unsigned length;
-    };
-
-    struct ByteRange
-    {
-        ByteRange(unsigned b, unsigned l)
             : begin(b), length(l)
         {
         }
@@ -124,13 +115,11 @@ public:
     //! Returns a pointer to the \p index-th slot.
     void* operator[](unsigned index) noexcept;
 
-    ByteRange byteRange(const Range& range) const noexcept;
+    Range read(const Range& range, void* dest, unsigned size) const;
 
-    ByteRange read(const ByteRange& range, void* dest, unsigned size) const;
+    Range write(const void* source, const Range& range, unsigned size);
 
-    ByteRange write(const void* source, const ByteRange& range, unsigned size);
-
-    std::pair<Slice, Slice> unwrap(const ByteRange& range) const noexcept;
+    std::pair<Slice, Slice> unwrap(const Range& range) const noexcept;
 
 private:
     //! The ring buffer's data.

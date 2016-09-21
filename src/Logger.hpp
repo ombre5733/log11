@@ -553,8 +553,7 @@ void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
         stmt->m_extensionSize = argSlots;
         serdes->serialize(
                 m_messageFifo,
-                m_messageFifo.byteRange(
-                        RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots)),
+                RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots),
                 serdes, arg, args...);
     }
 
@@ -602,8 +601,7 @@ void Logger::doLogStream(ClaimPolicy policy, Severity severity,
         stmt->m_extensionSize = argSlots;
         serdes->serialize(
                     m_messageFifo,
-                    m_messageFifo.byteRange(
-                            RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots)),
+                    RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots),
                     serdes, get<TIndices>(stream)...);
     }
 

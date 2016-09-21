@@ -350,9 +350,8 @@ void Logger::consumeFifoEntries()
                         = stmt->m_extensionSize
                           ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + sizeof(LogStatement)])
                           : nullptr;
-                auto byteRange = m_messageFifo.byteRange(
-                                     RingBuffer::Range(available.begin + sizeof(LogStatement),
-                                                       stmt->m_extensionSize));
+                auto byteRange = RingBuffer::Range(available.begin + sizeof(LogStatement),
+                                                   stmt->m_extensionSize);
 
                 // Interpret the format string.
                 unsigned argCounter = 0;
@@ -396,9 +395,8 @@ void Logger::consumeFifoEntries()
                         = stmt->m_extensionSize
                           ? *static_cast<SerdesBase**>(m_messageFifo[available.begin + sizeof(LogStatement)])
                           : nullptr;
-                auto byteRange = m_messageFifo.byteRange(
-                                     RingBuffer::Range(available.begin + sizeof(LogStatement),
-                                                       stmt->m_extensionSize));
+                auto byteRange = RingBuffer::Range(available.begin + sizeof(LogStatement),
+                                                   stmt->m_extensionSize);
                 auto numArgs = serdes->numArguments();
                 for (unsigned argCounter = 1; argCounter < numArgs; ++argCounter)
                 {

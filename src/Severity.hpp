@@ -27,10 +27,13 @@
 #ifndef LOG11_SEVERITY_HPP
 #define LOG11_SEVERITY_HPP
 
+#include <cstdint>
+
+
 namespace log11
 {
 
-enum class Severity
+enum class Severity : std::uint8_t
 {
     Trace,
     Debug,

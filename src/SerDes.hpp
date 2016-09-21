@@ -141,7 +141,7 @@ public:
     std::size_t numArguments() const noexcept = 0;
 
     virtual
-    bool apply(RingBuffer& buffer, RingBuffer::ByteRange range,
+    bool apply(RingBuffer& buffer, RingBuffer::Range range,
                std::size_t index, Visitor& visitor) = 0;
 
 protected:
@@ -169,7 +169,7 @@ protected:
 
     template <typename TArg, typename... TArgs>
     static
-    void doSerialize(RingBuffer& buffer, RingBuffer::ByteRange range,
+    void doSerialize(RingBuffer& buffer, RingBuffer::Range range,
                      const TArg& arg, const TArgs&... args)
     {
         if (range.length >= sizeof(TArg))
@@ -181,7 +181,7 @@ protected:
 
     template <typename... TArgs>
     static
-    void doSerialize(RingBuffer& buffer, RingBuffer::ByteRange range,
+    void doSerialize(RingBuffer& buffer, RingBuffer::Range range,
                      const StringRef& arg, const TArgs&... args)
     {
         if (range.length > sizeof(unsigned))
@@ -196,7 +196,7 @@ protected:
     }
 
     static
-    void doSerialize(RingBuffer&, RingBuffer::ByteRange)
+    void doSerialize(RingBuffer&, RingBuffer::Range)
     {
     }
 
@@ -204,7 +204,7 @@ protected:
 
     template <typename TArg, typename... TArgs>
     static
-    bool doApply(RingBuffer& buffer, RingBuffer::ByteRange range,
+    bool doApply(RingBuffer& buffer, RingBuffer::Range range,
                  std::size_t argIndex, Visitor& visitor,
                  TypeList<TArg, TArgs...>)
     {
@@ -234,7 +234,7 @@ protected:
 
     template <typename... TArgs>
     static
-    bool doApply(RingBuffer& buffer, RingBuffer::ByteRange range,
+    bool doApply(RingBuffer& buffer, RingBuffer::Range range,
                  std::size_t argIndex, Visitor& visitor,
                  TypeList<StringRef, TArgs...>)
     {
@@ -248,7 +248,7 @@ protected:
             if (argIndex == 0)
             {
                 auto ranges = buffer.unwrap(
-                                  RingBuffer::ByteRange(range.begin, length));
+                                  RingBuffer::Range(range.begin, length));
                 visitor.visit(
                         StringRef(static_cast<const char*>(ranges.first.pointer),
                                   ranges.first.length),
@@ -272,7 +272,7 @@ protected:
     }
 
     static
-    bool doApply(RingBuffer& /*buffer*/, const RingBuffer::ByteRange& /*range*/,
+    bool doApply(RingBuffer& /*buffer*/, const RingBuffer::Range& /*range*/,
                  std::size_t /*argIndex*/, Visitor& /*visitor*/,
                  TypeList<>)
     {
@@ -298,7 +298,7 @@ public:
     }
 
     static
-    void serialize(RingBuffer& buffer, RingBuffer::ByteRange range,
+    void serialize(RingBuffer& buffer, RingBuffer::Range range,
                    const T&... args)
     {
         SerdesBase::doSerialize(buffer, range, args...);
@@ -311,7 +311,7 @@ public:
     }
 
     virtual
-    bool apply(RingBuffer& buffer, RingBuffer::ByteRange range,
+    bool apply(RingBuffer& buffer, RingBuffer::Range range,
                std::size_t index, Visitor& visitor) override
     {
         if (index < numArguments())

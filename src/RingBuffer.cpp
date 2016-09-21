@@ -224,12 +224,7 @@ void* RingBuffer::operator[](unsigned index) noexcept
     return static_cast<char*>(m_data) + index % m_size;
 }
 
-auto RingBuffer::byteRange(const Range& range) const noexcept -> ByteRange
-{
-    return ByteRange(range.begin, range.length);
-}
-
-auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) const -> ByteRange
+auto RingBuffer::read(const Range& range, void* dest, unsigned size) const -> Range
 {
     if (size > range.length)
         size = range.length;
@@ -248,10 +243,10 @@ auto RingBuffer::read(const ByteRange& range, void* dest, unsigned size) const -
         std::memcpy(static_cast<char*>(dest) + restSize, m_data, size - restSize);
     }
 
-    return ByteRange(range.begin + size, range.length - size);
+    return Range(range.begin + size, range.length - size);
 }
 
-auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size) -> ByteRange
+auto RingBuffer::write(const void* source, const Range& range, unsigned size) -> Range
 {
     if (size > range.length)
         size = range.length;
@@ -270,10 +265,10 @@ auto RingBuffer::write(const void* source, const ByteRange& range, unsigned size
         std::memcpy(m_data, static_cast<const char*>(source) + restSize, size - restSize);
     }
 
-    return ByteRange(begin + size, range.length - size);
+    return Range(begin + size, range.length - size);
 }
 
-auto RingBuffer::unwrap(const ByteRange& range) const noexcept -> std::pair<Slice, Slice>
+auto RingBuffer::unwrap(const Range& range) const noexcept -> std::pair<Slice, Slice>
 {
     unsigned begin = range.begin % m_size;
     unsigned restSize = m_size - begin;

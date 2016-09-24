@@ -44,6 +44,11 @@ class TextStream;
 namespace log11_detail
 {
 
+template <typename T>
+class Serdes;
+
+
+
 template <typename... T>
 struct TypeList {};
 
@@ -346,6 +351,9 @@ private:
 
 
     friend class log11_detail::TextForwarderSink;
+
+    template <typename T>
+    friend class Serdes;
 };
 
 template <typename... TArgs>

@@ -26,6 +26,8 @@
 
 #include "TextStream.hpp"
 
+#include "SplitString.hpp"
+
 #include <cstdint>
 #include <cstring>
 
@@ -192,27 +194,20 @@ TextStream& TextStream::operator<<(unsigned long long value)
 TextStream& TextStream::operator<<(float value)
 {
     m_sink->putString("TODO", 4);
+    reset();
+    return *this;
 }
 
 TextStream& TextStream::operator<<(double value)
 {
     m_sink->putString("TODO", 4);
+    reset();
+    return *this;
 }
 
 TextStream& TextStream::operator<<(long double value)
 {
     m_sink->putString("TODO", 4);
-}
-
-// -----------------------------------------------------------------------------
-//     String printing
-// -----------------------------------------------------------------------------
-
-TextStream& TextStream::operator<<(const char* str)
-{
-    // TODO: padding
-
-    m_sink->putString(str, std::strlen(str));
     reset();
     return *this;
 }
@@ -232,6 +227,31 @@ TextStream& TextStream::operator<<(const void* value)
     m_format.type = Format::Hex;
 
     printInteger(uintptr_t(value), false);
+    reset();
+    return *this;
+}
+
+// -----------------------------------------------------------------------------
+//     String printing
+// -----------------------------------------------------------------------------
+
+TextStream& TextStream::operator<<(const char* str)
+{
+    // TODO: padding
+
+    m_sink->putString(str, std::strlen(str));
+    reset();
+    return *this;
+}
+
+TextStream& TextStream::operator<<(const log11_detail::SplitString& str)
+{
+    // TODO: padding
+
+    if (str.length1)
+        m_sink->putString(str.begin1, str.length1);
+    if (str.length2)
+        m_sink->putString(str.begin2, str.length2);
     reset();
     return *this;
 }

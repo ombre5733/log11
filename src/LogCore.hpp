@@ -85,6 +85,8 @@ public:
     LogCore(const LogCore&) = delete;
     LogCore& operator=(const LogCore&) = delete;
 
+    void enableImmutableStringOptimization(void* begin, void* end);
+
     template <typename... TArgs>
     void log(ClaimPolicy policy, Severity severity, const char* format,
              TArgs&&... args);

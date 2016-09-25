@@ -26,6 +26,7 @@
 
 #include "LogCore.hpp"
 #include "BinarySink.hpp"
+#include "Meta.hpp"
 #include "TextSink.hpp"
 
 #include <chrono>
@@ -40,6 +41,17 @@ namespace log11_detail
 LogStatement::LogStatement(Severity s)
     : timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count())
     , severity(static_cast<int>(s))
+{
+}
+
+template <typename T, typename... TArgs>
+void prepareSerializer(TypeList<T, TArgs...>)
+{
+    Serdes<T>::instance();
+    prepareSerializer(TypeList<TArgs...>());
+}
+
+void prepareSerializer(TypeList<>)
 {
 }
 
@@ -58,6 +70,8 @@ LogCore::LogCore(unsigned exponent, TextSink* textSink)
 #else
     m_consumerThread = std::thread(&LogCore::consumeFifoEntries, this);
 #endif // LOG11_USE_WEOS
+
+    log11_detail::prepareSerializer(log11_detail::builtin_types());
 }
 
 LogCore::~LogCore()

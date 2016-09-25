@@ -27,6 +27,7 @@
 #ifndef LOG11_TEXTSTREAM_HPP
 #define LOG11_TEXTSTREAM_HPP
 
+#include "Meta.hpp"
 #include "TextSink.hpp"
 
 #include <cstddef>
@@ -46,56 +47,10 @@ class TextStream;
 namespace log11_detail
 {
 
+class SplitString;
+
 template <typename T>
 class Serdes;
-
-
-
-template <typename... T>
-struct TypeList {};
-
-
-
-template <typename T, typename U>
-struct is_member;
-
-template <typename T, typename TH, typename... TL>
-struct is_member<T, TypeList<TH, TL...>>
-        : std::conditional<std::is_same<T, TH>::value,
-                           std::true_type,
-                           is_member<T, TypeList<TL...>>>::type
-{
-};
-
-template <typename T>
-struct is_member<T, TypeList<>> : std::false_type {};
-
-
-
-using builtin_types = TypeList<bool,
-                               char,
-                               signed char,
-                               unsigned char,
-                               short,
-                               unsigned short,
-                               int,
-                               unsigned int,
-                               long,
-                               unsigned long,
-                               long long,
-                               unsigned long long,
-                               float,
-                               double,
-                               long double//,
-                               >;//StringRef>;
-
-template <typename T>
-struct is_custom : std::integral_constant<
-                       bool,
-                       !is_member<std::decay_t<T>, builtin_types>::value
-                       && !std::is_pointer<T>::value>
-{
-};
 
 
 
@@ -226,9 +181,10 @@ public:
     TextStream& operator<<(double value);
     TextStream& operator<<(long double value);
 
-    TextStream& operator<<(const char* str);
-
     TextStream& operator<<(const void* value);
+
+    TextStream& operator<<(const char* str);
+    TextStream& operator<<(const log11_detail::SplitString& str);
 
     template <typename... TArgs>
     TextStream& print(const char* fmt, TArgs&&... args);

@@ -30,10 +30,70 @@
 #include <weos/iterator.hpp>
 #endif // LOG11_USE_WEOS
 
+#include <cstdint>
 #include <cstring>
 
 
 using namespace log11;
+using namespace std;
+
+// ----=====================================================================----
+//     RingBuffer::Stream
+// ----=====================================================================----
+
+RingBuffer::Stream::Stream(
+        RingBuffer& buffer, unsigned begin, unsigned length) noexcept
+    : m_buffer(buffer),
+      m_begin(begin),
+      m_length(length)
+{
+}
+
+bool RingBuffer::Stream::read(void* dest, unsigned size) noexcept
+{
+    if (size <= m_length)
+    {
+        m_buffer.read(m_begin, dest, size);
+        m_begin += size;
+        m_length -= size;
+        return true;
+    }
+    else
+    {
+        m_length = 0;
+        return false;
+    }
+}
+
+bool RingBuffer::Stream::write(const void* source, unsigned size) noexcept
+{
+    if (size <= m_length)
+    {
+        m_buffer.write(m_begin, source, size);
+        m_begin += size;
+        m_length -= size;
+        return true;
+    }
+    else
+    {
+        m_length = 0;
+        return false;
+    }
+}
+
+// ----=====================================================================----
+//     RingBuffer::Block
+// ----=====================================================================----
+
+RingBuffer::Stream RingBuffer::Block::stream(RingBuffer& buffer) noexcept
+{
+    return RingBuffer::Stream(buffer,
+                              m_begin + header_size, m_length - header_size);
+}
+
+// ----=====================================================================----
+//     RingBuffer
+// ----=====================================================================----
 
 RingBuffer::RingBuffer(unsigned exponent)
     : m_size(1u << exponent),
@@ -53,8 +113,9 @@ RingBuffer::~RingBuffer()
     ::operator delete(m_data);
 }
 
-auto RingBuffer::claim(unsigned numElements) -> Range
+auto RingBuffer::claim(unsigned numElements) -> Block
 {
+    numElements += 2;
     if (numElements > m_size)
         numElements = m_size;
 
@@ -70,13 +131,17 @@ auto RingBuffer::claim(unsigned numElements) -> Range
                     [&] { return int(m_consumed - consumerThreshold) >= 0; });
     }
 
-    return Range(claimEnd - numElements, numElements);
+    unsigned claimBegin = claimEnd - numElements;
+    *reinterpret_cast<uint16_t*>(data(claimBegin)) = numElements;
+    return Block(claimBegin, numElements);
 }
 
-auto RingBuffer::tryClaim(unsigned minNumElements, unsigned maxNumElements) -> Range
+auto RingBuffer::tryClaim(unsigned minNumElements, unsigned maxNumElements) -> Block
 {
+    minNumElements += 2;
     if (minNumElements > m_size)
         minNumElements = m_size;
+    maxNumElements += 2;
     if (maxNumElements > m_size)
         maxNumElements = m_size;
 
@@ -87,23 +152,24 @@ auto RingBuffer::tryClaim(unsigned minNumElements, unsigned maxNumElements) -> R
         // Determine the number of available elements.
         free = m_consumed - (claimBegin - m_size);
         if (free < int(minNumElements))
-            return Range(0, 0);
+            return Block(0, Block::header_size);
         if (free >= int(maxNumElements))
             free = maxNumElements;
     } while (!m_claimed.compare_exchange_weak(claimBegin, claimBegin + free));
 
-    return Range(claimBegin, free);
+    *reinterpret_cast<uint16_t*>(data(claimBegin)) = free;
+    return Block(claimBegin, free);
 }
 
-void RingBuffer::publish(const Range& range)
+void RingBuffer::publish(const Block& block)
 {
     for (;;)
     {
         // Fast path: Assume that this producer can publish its range.
-        unsigned expected = range.begin;
-        while (expected == range.begin)
+        unsigned expected = block.m_begin;
+        while (expected == block.m_begin)
         {
-            if (m_published.compare_exchange_strong(expected, range.begin + range.length))
+            if (m_published.compare_exchange_strong(expected, block.m_begin + block.m_length))
             {
                 m_producerProgress.notify(m_published, [] {});
                 return;
@@ -116,24 +182,24 @@ void RingBuffer::publish(const Range& range)
     }
 
     // Wait until the other producers have made progress.
-    m_producerProgress.expect(m_published, range.begin);
+    m_producerProgress.expect(m_published, block.m_begin);
     // Publish the given range.
-    m_producerProgress.notify(m_published, range.begin + range.length);
+    m_producerProgress.notify(m_published, block.m_begin + block.m_length);
 }
 
-void RingBuffer::tryPublish(const Range& range)
+void RingBuffer::tryPublish(const Block& block)
 {
     // Squeeze the range into an unsigned.
-    unsigned modBegin = range.begin % m_size;
-    unsigned compressedRange = (modBegin << (sizeof(unsigned) * 4)) + range.length;
+    unsigned modBegin = block.m_begin % m_size;
+    unsigned compressedRange = (modBegin << (sizeof(unsigned) * 4)) + block.m_length;
 
     for (;;)
     {
         // Fast path: Assume that this producer can publish its range.
-        unsigned expected = range.begin;
-        while (expected == range.begin)
+        unsigned expected = block.m_begin;
+        while (expected == block.m_begin)
         {
-            if (m_published.compare_exchange_strong(expected, range.begin + range.length))
+            if (m_published.compare_exchange_strong(expected, block.m_begin + block.m_length))
             {
                 m_producerProgress.notify(m_published, [] {});
                 return;
@@ -196,7 +262,7 @@ bool RingBuffer::applyStash() noexcept
 
 
 
-auto RingBuffer::wait() noexcept -> Range
+auto RingBuffer::wait() noexcept -> Block
 {
     while (m_stashCount != 0 && applyStash())
     {
@@ -209,29 +275,26 @@ auto RingBuffer::wait() noexcept -> Range
                     m_published,
                     [&] { return int(m_published - m_consumed) > 0; });
     }
-    return Range(m_consumed, m_published - m_consumed);
+    unsigned consumeBegin = m_consumed;
+    return Block(consumeBegin,
+                 *reinterpret_cast<uint16_t*>(data(consumeBegin)));
 }
 
-void RingBuffer::consume(unsigned numElements) noexcept
+void RingBuffer::consume(Block block) noexcept
 {
-    m_consumerProgress.notify(m_consumed, m_consumed + numElements);
+    m_consumerProgress.notify(m_consumed, m_consumed + block.m_length);
 }
 
 
 
-void* RingBuffer::operator[](unsigned index) noexcept
+void* RingBuffer::data(unsigned index) noexcept
 {
     return static_cast<char*>(m_data) + index % m_size;
 }
 
-auto RingBuffer::read(const Range& range, void* dest, unsigned size) const -> Range
+void RingBuffer::read(unsigned begin, void* dest, unsigned size) const noexcept
 {
-    if (size > range.length)
-        size = range.length;
-    if (!size)
-        return range;
-
-    unsigned begin = range.begin % m_size;
+    begin %= m_size;
     unsigned restSize = m_size - begin;
     if (size <= restSize)
     {
@@ -242,18 +305,11 @@ auto RingBuffer::read(const Range& range, void* dest, unsigned size) const -> Ra
         std::memcpy(dest, static_cast<const char*>(m_data) + begin, restSize);
         std::memcpy(static_cast<char*>(dest) + restSize, m_data, size - restSize);
     }
-
-    return Range(range.begin + size, range.length - size);
 }
 
-auto RingBuffer::write(const void* source, const Range& range, unsigned size) -> Range
+void RingBuffer::write(unsigned begin, const void* source, unsigned size) noexcept
 {
-    if (size > range.length)
-        size = range.length;
-    if (!size)
-        return range;
-
-    unsigned begin = range.begin % m_size;
+    begin %= m_size;
     unsigned restSize = m_size - begin;
     if (size <= restSize)
     {
@@ -264,24 +320,22 @@ auto RingBuffer::write(const void* source, const Range& range, unsigned size) ->
         std::memcpy(static_cast<char*>(m_data) + begin, source, restSize);
         std::memcpy(m_data, static_cast<const char*>(source) + restSize, size - restSize);
     }
-
-    return Range(begin + size, range.length - size);
 }
 
-auto RingBuffer::unwrap(const Range& range) const noexcept -> std::pair<Slice, Slice>
+auto RingBuffer::unwrap(const Block& range) const noexcept -> std::pair<Slice, Slice>
 {
-    unsigned begin = range.begin % m_size;
+    unsigned begin = range.m_begin % m_size;
     unsigned restSize = m_size - begin;
-    if (range.length <= restSize)
+    if (range.m_length <= restSize)
     {
         return std::pair<Slice, Slice>(
-                    Slice(static_cast<char*>(m_data) + begin, range.length),
+                    Slice(static_cast<char*>(m_data) + begin, range.m_length),
                     Slice(nullptr, 0));
     }
     else
     {
         return std::pair<Slice, Slice>(
                     Slice(static_cast<char*>(m_data) + begin, restSize),
-                    Slice(m_data, range.length - restSize));
+                    Slice(m_data, range.m_length - restSize));
     }
 }

@@ -27,6 +27,8 @@
 #ifndef LOG11_TEXTSTREAM_HPP
 #define LOG11_TEXTSTREAM_HPP
 
+#include "TextSink.hpp"
+
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -169,17 +171,7 @@ void selectCustomPrint(log11::TextStream& stream, T&&,
 
 
 
-class TextStreamSink
-{
-public:
-    virtual
-    void putChar(char ch) = 0;
-
-    virtual
-    void putString(const char* str, std::size_t size) = 0;
-};
-
-class TextForwarderSink : public TextStreamSink
+class TextForwarderSink : public TextSink
 {
 public:
     explicit
@@ -207,7 +199,7 @@ class TextStream
 {
 public:
     explicit
-    TextStream(log11_detail::TextStreamSink& sink);
+    TextStream(TextSink& sink);
 
     TextStream(const TextStream&) = delete;
     TextStream& operator=(const TextStream&) = delete;
@@ -301,7 +293,7 @@ private:
         Type type;
     };
 
-    log11_detail::TextStreamSink* m_sink;
+    TextSink* m_sink;
 
     Format m_format;
 
@@ -353,7 +345,7 @@ private:
     friend class log11_detail::TextForwarderSink;
 
     template <typename T>
-    friend class Serdes;
+    friend class log11_detail::Serdes;
 };
 
 template <typename... TArgs>

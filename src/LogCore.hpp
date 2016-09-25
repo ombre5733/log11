@@ -27,16 +27,26 @@
 #ifndef LOG11_LOGCORE_HPP
 #define LOG11_LOGCORE_HPP
 
+#include "_config.hpp"
+
 #include "RingBuffer.hpp"
 #include "Serdes.hpp"
 #include "Severity.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <type_traits>
 
+#ifdef LOG11_USE_WEOS
+#include <weos/thread.hpp>
+#else
+#include <thread>
+#endif
 
 namespace log11
 {
+
+class TextSink;
 
 namespace log11_detail
 {
@@ -45,12 +55,11 @@ struct LogStatement
 {
     LogStatement() = default;
 
-    LogStatement(Severity severity, unsigned length);
+    LogStatement(Severity severity);
 
     std::int64_t timeStamp;
     unsigned isTruncated : 1;
     unsigned reserved : 11;
-    unsigned length : 16;
     unsigned severity : 4;
 };
 
@@ -68,7 +77,10 @@ public:
     };
 
 
-    LogCore();
+    explicit
+    LogCore(unsigned exponent, TextSink* textSink);
+
+    ~LogCore();
 
     LogCore(const LogCore&) = delete;
     LogCore& operator=(const LogCore&) = delete;
@@ -84,6 +96,13 @@ private:
 
     std::atomic_int m_flags;
 
+    std::atomic<TextSink*> m_textSink;
+
+#ifdef LOG11_USE_WEOS
+    weos::thread m_consumerThread;
+#else
+    std::thread m_consumerThread;
+#endif
 
 
     template <typename TArg, typename... TArgs>
@@ -104,31 +123,26 @@ private:
 
     template <typename TArg, typename... TArgs>
     static
-    RingBuffer::Range doSerialize(
-            RingBuffer& buffer, RingBuffer::Range range,
-            const TArg& arg, const TArgs&... args)
+    void doSerialize(RingBuffer::Stream& stream,
+                     const TArg& arg, const TArgs&... args)
     {
-        if (range.length >= sizeof(void*))
+        auto* serdes = log11_detail::Serdes<std::decay_t<TArg>>::instance();
+        if (stream.write(&serdes, sizeof(void*))
+            && serdes->serialize(stream, arg))
         {
-            auto& serdes = log11_detail::Serdes<std::decay_t<TArg>>::instance();
-            range = buffer.write(&serdes, range, sizeof(void*));
-            range = serdes.serialize(buffer, range, arg);
-            doSerialize(buffer, range, args...);
+            doSerialize(stream, args...);
         }
-        else
-        {
-            range.length = 0;
-        }
-        return range;
     }
 
     static
-    void doSerialize(RingBuffer&, RingBuffer::Range)
+    void doSerialize(RingBuffer::Stream&)
     {
     }
 
 
     void consumeFifoEntries();
+    void writeText(TextSink* sink, RingBuffer::Stream inStream);
+    void writeBinary(RingBuffer::Stream inStream);
 };
 
 template <typename... TArgs>
@@ -139,25 +153,28 @@ void LogCore::log(ClaimPolicy policy, Severity severity,
     using namespace log11_detail;
 
     auto argumentSize = doRequiredSize(args...);
-    auto totalSize = argumentSize + sizeof(LogStatement);
+    auto totalSize = argumentSize + sizeof(LogStatement) + sizeof(const char*);
 
-    RingBuffer::Range claimed;
+    RingBuffer::Block claimed;
     switch (policy)
     {
     case Block:    claimed = m_messageFifo.claim(totalSize); break;
     case Truncate: claimed = m_messageFifo.tryClaim(sizeof(LogStatement), totalSize); break;
     case Discard:  claimed = m_messageFifo.tryClaim(totalSize, totalSize); break;
     }
-    if (claimed.length == 0)
+    if (claimed.length() == 0)
         return;
 
+    auto stream = claimed.stream(m_messageFifo);
+
     // TODO: Serialize LogStatement
-    LogStatement stmt(severity, claimed.length);
-    stmt.isTruncated = claimed.length < totalSize;
-    auto argRange = m_messageFifo.write(&stmt, claimed, sizeof(LogStatement));
+    LogStatement stmt(severity);
+    stmt.isTruncated = claimed.length() < totalSize;
+    stream.write(&stmt, sizeof(LogStatement));
+    stream.write(&format, sizeof(const char*));
 
     // Serialize all the arguments.
-    doSerialize(m_messageFifo, argRange, args...);
+    doSerialize(stream, args...);
 
     if (policy == Block)
         m_messageFifo.publish(claimed);

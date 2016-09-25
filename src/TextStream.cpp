@@ -26,7 +26,10 @@
 
 #include "TextStream.hpp"
 
+#include <cstdint>
 #include <cstring>
+
+using namespace std;
 
 
 namespace log11
@@ -63,7 +66,7 @@ void TextForwarderSink::putString(const char* str, std::size_t size)
 //     TextStream
 // ----=====================================================================----
 
-TextStream::TextStream(log11_detail::TextStreamSink& sink)
+TextStream::TextStream(TextSink& sink)
     : m_sink(&sink)
 {
 }
@@ -80,6 +83,7 @@ TextStream& TextStream::operator<<(bool value)
         m_sink->putString("true", 4);
     else
         m_sink->putString("false", 5);
+    reset();
     return *this;
 }
 
@@ -88,6 +92,7 @@ TextStream& TextStream::operator<<(char ch)
     // TODO: padding
 
     m_sink->putChar(ch);
+    reset();
     return *this;
 }
 
@@ -101,12 +106,14 @@ TextStream& TextStream::operator<<(signed char value)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
+    reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(unsigned char value)
 {
     printInteger(value, false);
+    reset();
     return *this;
 }
 
@@ -116,12 +123,14 @@ TextStream& TextStream::operator<<(short value)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
+    reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(unsigned short value)
 {
     printInteger(value, false);
+    reset();
     return *this;
 }
 
@@ -131,12 +140,14 @@ TextStream& TextStream::operator<<(int value)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
+    reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(unsigned int value)
 {
     printInteger(value, false);
+    reset();
     return *this;
 }
 
@@ -146,12 +157,14 @@ TextStream& TextStream::operator<<(long value)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
+    reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(unsigned long value)
 {
     printInteger(value, false);
+    reset();
     return *this;
 }
 
@@ -161,12 +174,14 @@ TextStream& TextStream::operator<<(long long value)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
+    reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(unsigned long long value)
 {
     printInteger(value, false);
+    reset();
     return *this;
 }
 
@@ -174,7 +189,20 @@ TextStream& TextStream::operator<<(unsigned long long value)
 //     Floating point printing
 // -----------------------------------------------------------------------------
 
-// TODO
+TextStream& TextStream::operator<<(float value)
+{
+    m_sink->putString("TODO", 4);
+}
+
+TextStream& TextStream::operator<<(double value)
+{
+    m_sink->putString("TODO", 4);
+}
+
+TextStream& TextStream::operator<<(long double value)
+{
+    m_sink->putString("TODO", 4);
+}
 
 // -----------------------------------------------------------------------------
 //     String printing
@@ -182,7 +210,10 @@ TextStream& TextStream::operator<<(unsigned long long value)
 
 TextStream& TextStream::operator<<(const char* str)
 {
+    // TODO: padding
+
     m_sink->putString(str, std::strlen(str));
+    reset();
     return *this;
 }
 
@@ -190,7 +221,20 @@ TextStream& TextStream::operator<<(const char* str)
 //     Pointer printing
 // -----------------------------------------------------------------------------
 
-// TODO
+TextStream& TextStream::operator<<(const void* value)
+{
+    // TODO: print padding before changing the format
+
+    m_format.align = Format::AlignAfterSign;
+    m_format.fill = '0';
+    m_format.width = 2 + sizeof(void*) * 2;
+    m_format.basePrefix = true;
+    m_format.type = Format::Hex;
+
+    printInteger(uintptr_t(value), false);
+    reset();
+    return *this;
+}
 
 // ----=====================================================================----
 //     Private methods
@@ -245,9 +289,6 @@ void TextStream::printInteger(max_int_type value, bool isNegative)
         m_format.align = Format::Right;
 
     m_padding = m_format.width;
-    if (m_format.basePrefix)
-        m_padding -= 2;
-
     max_int_type divisor;
     switch (m_format.type)
     {
@@ -262,30 +303,11 @@ void TextStream::printInteger(max_int_type value, bool isNegative)
 
     switch (m_format.type)
     {
-    case Format::Binary:
-        if (m_format.basePrefix)
-            m_sink->putString("0b", 2);
-        printIntegerDigits<2>(value, divisor);
-        break;
-
+    case Format::Binary:  printIntegerDigits< 2>(value, divisor); break;
     default:
-    case Format::Decimal:
-        if (m_format.basePrefix)
-            m_sink->putString("0d", 2);
-        printIntegerDigits<10>(value, divisor);
-        break;
-
-    case Format::Octal:
-        if (m_format.basePrefix)
-            m_sink->putString("0o", 2);
-        printIntegerDigits<8>(value, divisor);
-        break;
-
-    case Format::Hex:
-        if (m_format.basePrefix)
-            m_sink->putString("0x", 2);
-        printIntegerDigits<16>(value, divisor);
-        break;
+    case Format::Decimal: printIntegerDigits<10>(value, divisor); break;
+    case Format::Octal:   printIntegerDigits< 8>(value, divisor); break;
+    case Format::Hex:     printIntegerDigits<16>(value, divisor); break;
     }
 
     if (m_format.align == Format::Left || m_format.align == Format::Centered)
@@ -297,6 +319,8 @@ void TextStream::printPrePaddingAndSign(bool isNegative)
 {
     if (isNegative || m_format.sign != Format::OnlyNegative)
         --m_padding;
+    if (m_format.basePrefix)
+        m_padding -= 2;
 
     if (m_format.align == Format::Right)
     {
@@ -316,6 +340,16 @@ void TextStream::printPrePaddingAndSign(bool isNegative)
         m_sink->putChar(' ');
     else if (m_format.sign == Format::Always)
         m_sink->putChar('+');
+
+    if (m_format.basePrefix)
+        switch (m_format.type)
+        {
+        case Format::Binary:  m_sink->putString("0b", 2); break;
+        default:
+        case Format::Decimal: m_sink->putString("0d", 2); break;
+        case Format::Octal:   m_sink->putString("0o", 2); break;
+        case Format::Hex:     m_sink->putString("0x", 2); break;
+        }
 
     if (m_format.align == Format::AlignAfterSign)
         while (m_padding-- > 0)

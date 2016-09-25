@@ -46,13 +46,13 @@ public:
     virtual
     ~SerdesBase();
 
-    virtual
-    RingBuffer::Range skip(RingBuffer& buffer,
-                           RingBuffer::Range range) const noexcept = 0;
+    //virtual
+    //RingBuffer::Block skip(RingBuffer& buffer,
+    //                       RingBuffer::Block range) const noexcept = 0;
 
     virtual
-    RingBuffer::Range deserialize(RingBuffer& buffer, RingBuffer::Range range,
-                                  TextStream& stream) const noexcept = 0;
+    bool deserialize(RingBuffer::Stream& inStream,
+                     TextStream& outStream) const noexcept = 0;
 
     //virtual
     //void deserialize(RingBuffer& buffer, RingBuffer::Range range, BinaryStream& stream) const noexcept = 0;
@@ -66,10 +66,10 @@ public:
     Serdes& operator=(const Serdes&) = delete;
 
     static
-    Serdes& instance()
+    Serdes* instance()
     {
         static Serdes serdes;
-        return serdes;
+        return &serdes;
     }
 
     static
@@ -79,51 +79,41 @@ public:
     }
 
     static
-    RingBuffer::Range serialize(RingBuffer& buffer, RingBuffer::Range range,
-                                const T& value) noexcept
+    bool serialize(RingBuffer::Stream& stream, const T& value) noexcept
     {
-        if (range.length >= sizeof(T))
-        {
-            range = buffer.write(&value, range, sizeof(T));
-        }
-        else
-        {
-            range.length = 0;
-        }
-        return range;
+        return stream.write(&value, sizeof(T));
     }
 
-    virtual
-    RingBuffer::Range skip(RingBuffer&, RingBuffer::Range range) const noexcept override
-    {
-        // TODO: Bounds check
-        if (range.length >= sizeof(T))
-        {
-            range.begin += sizeof(T);
-            range.length -= sizeof(T);
-        }
-        else
-        {
-            range.length = 0;
-        }
-        return range;
-    }
+    //virtual
+    //RingBuffer::Block skip(RingBuffer&, RingBuffer::Block range) const noexcept override
+    //{
+    //    // TODO: Bounds check
+    //    if (range.m_length >= sizeof(T))
+    //    {
+    //        range.m_begin += sizeof(T);
+    //        range.m_length -= sizeof(T);
+    //    }
+    //    else
+    //    {
+    //        range.m_length = 0;
+    //    }
+    //    return range;
+    //}
 
     virtual
-    RingBuffer::Range deserialize(RingBuffer& buffer, RingBuffer::Range range,
-                                  TextStream& stream) const noexcept override
+    bool deserialize(RingBuffer::Stream& inStream,
+                     TextStream& outStream) const noexcept override
     {
-        if (range.length >= sizeof(T))
+        T temp;
+        if (inStream.read(&temp, sizeof(T)))
         {
-            T temp;
-            range = buffer.read(range, &temp, sizeof(T));
-            stream.doPrint(std::move(temp), log11_detail::is_custom<T>());
+            outStream.doPrint(std::move(temp), log11_detail::is_custom<T>());
+            return true;
         }
         else
         {
-            range.length = 0;
+            return false;
         }
-        return range;
     }
 
     //virtual

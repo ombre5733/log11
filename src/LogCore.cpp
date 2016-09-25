@@ -25,6 +25,8 @@
 *******************************************************************************/
 
 #include "LogCore.hpp"
+#include "BinarySink.hpp"
+#include "TextSink.hpp"
 
 #include <chrono>
 
@@ -35,9 +37,8 @@ namespace log11
 namespace log11_detail
 {
 
-LogStatement::LogStatement(Severity s, unsigned l)
+LogStatement::LogStatement(Severity s)
     : timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count())
-    , length(l)
     , severity(static_cast<int>(s))
 {
 }
@@ -48,34 +49,74 @@ LogStatement::LogStatement(Severity s, unsigned l)
 using namespace log11_detail;
 
 
+LogCore::LogCore(unsigned exponent, TextSink* textSink)
+    : m_messageFifo(exponent),
+      m_textSink(textSink)
+{
+#ifdef LOG11_USE_WEOS
+    m_consumerThread = weos::thread(attrs, &LogCore::consumeFifoEntries, this);
+#else
+    m_consumerThread = std::thread(&LogCore::consumeFifoEntries, this);
+#endif // LOG11_USE_WEOS
+}
+
+LogCore::~LogCore()
+{
+    // TODO
+    //m_consumerThread.join();
+    m_consumerThread.detach();
+}
+
 void LogCore::consumeFifoEntries()
 {
+    struct AutoConsumer
+    {
+        AutoConsumer(RingBuffer& buffer, RingBuffer::Block& block)
+            : m_buffer(buffer),
+              m_block(block)
+        {
+        }
+
+        ~AutoConsumer()
+        {
+            m_buffer.consume(m_block);
+        }
+
+        RingBuffer& m_buffer;
+        RingBuffer::Block& m_block;
+    };
+
     constexpr int StopRequest = 1;
 
     while ((m_flags & StopRequest) == 0)
     {
-        auto available = m_messageFifo.wait();
-        while ((m_flags & StopRequest) == 0 && available.length)
+        auto block = m_messageFifo.wait();
+        AutoConsumer consumer(m_messageFifo, block);
+        if (m_flags & StopRequest)
+            return;
+
+        // Deserialize the header.
+        auto stream = block.stream(m_messageFifo);
+        LogStatement stmt;
+        stream.read(&stmt, sizeof(LogStatement));
+
+        TextSink* textSink = m_textSink;
+        if (textSink)
         {
-            // Deserialize the header.
-            LogStatement stmt;
-            m_messageFifo.read(available, &stmt, sizeof(LogStatement));
-
-            RingBuffer::Range thisRange(available.begin, stmt.length);
-            available.begin += stmt.length;
-            available.length -= stmt.length;
-
-
-
-            m_messageFifo.consume(stmt.length);
+            textSink->beginLogEntry(static_cast<Severity>(stmt.severity));
+            writeText(textSink, stream);
+            textSink->endLogEntry();
         }
     }
 }
 
-void LogCore::writeAsText(LogStatement& stmt)
+void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
 {
-    textSink->beginLogEntry(static_cast<Severity>(stmt.severity));
+    const char* fmt;
+    if (!inStream.read(&fmt, sizeof(const char*)))
+        return;
 
+    TextStream outStream(*sink);
     unsigned argCounter = 0;
     const char* marker = fmt;
     for (; *fmt; ++fmt)
@@ -84,24 +125,27 @@ void LogCore::writeAsText(LogStatement& stmt)
             continue;
 
         if (fmt != marker)
-            m_sink->putString(marker, fmt - marker);
+            sink->putString(marker, fmt - marker);
 
         // Loop to the end of the format specifier (or the end of the string).
         marker = ++fmt;
         while (*fmt && *fmt != '}')
             ++fmt;
         if (!*fmt)
-            return *this;
+        {
+            marker = fmt;
+            break;
+        }
 
         // TODO:
         // if (argCounter != argument.from.format.spec)
         // skipToArgument()
 
-        if (available.length >= sizeof(void*))
+
+        log11_detail::SerdesBase* serdes;
+        if (inStream.read(&serdes, sizeof(void*)))
         {
-            log11_detail::SerdesBase* serdes;
-            buffer.read(range, &serdes, sizeof(void*));
-            serdes->deserialize(buffer, range, stream);
+            serdes->deserialize(inStream, outStream);
         }
         else
         {
@@ -112,21 +156,21 @@ void LogCore::writeAsText(LogStatement& stmt)
         marker = fmt + 1;
     }
     if (fmt != marker)
-        m_sink->putString(marker, fmt - marker);
+        sink->putString(marker, fmt - marker);
 
     // TODO: Output rest of arguments
-
-    textSink->endLogEntry();
 }
 
-void LogCore::writeAsBinary(LogStatement& stmt, RingBuffer::Range range)
+void LogCore::writeBinary(RingBuffer::Stream inStream)
 {
+#if 0
     while (range.length > sizeof(void*))
     {
         log11_detail::SerdesBase* serdes;
         range = m_messageFifo.read(range, &serdes, sizeof(void*));
         range = serdes->deserialize(m_messageFifo, range, stream);
     }
+#endif
 }
 
 } // namespace log11

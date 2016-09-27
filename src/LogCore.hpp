@@ -35,6 +35,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <mutex>
 #include <type_traits>
 
 #ifdef LOG11_USE_WEOS
@@ -46,6 +47,7 @@
 namespace log11
 {
 
+class BinarySinkBase;
 class TextSink;
 
 namespace log11_detail
@@ -53,12 +55,18 @@ namespace log11_detail
 
 struct LogStatement
 {
+    enum class Command
+    {
+        Terminate = 1
+    };
+
     LogStatement() = default;
 
     LogStatement(Severity severity);
 
     std::int64_t timeStamp;
     unsigned isTruncated : 1;
+    unsigned isControl : 1;
     unsigned reserved : 11;
     unsigned severity : 4;
 };
@@ -78,46 +86,89 @@ public:
 
 
     explicit
-    LogCore(unsigned exponent, TextSink* textSink);
+    LogCore(unsigned exponent,
+            TextSink* textSink = nullptr, BinarySinkBase* binarySink = nullptr);
+
+    explicit
+    LogCore(unsigned exponent,
+            BinarySinkBase* binarySink, TextSink* textSink = nullptr);
 
     ~LogCore();
 
     LogCore(const LogCore&) = delete;
     LogCore& operator=(const LogCore&) = delete;
 
-    void enableImmutableStringOptimization(void* begin, void* end);
+    void enableImmutableStringOptimization(
+            std::uintptr_t beginAddress, std::uintptr_t endAddress);
 
     template <typename... TArgs>
     void log(ClaimPolicy policy, Severity severity, const char* format,
              TArgs&&... args);
 
 private:
+    enum ConsumerState
+    {
+        Initial,
+        Terminated
+    };
+
+    struct ScratchPad
+    {
+    public:
+        ScratchPad(unsigned capacity);
+        ~ScratchPad();
+
+        ScratchPad(const ScratchPad&) = delete;
+        ScratchPad& operator=(const ScratchPad&) = delete;
+
+        void reserve(unsigned capacity, bool keepContent);
+
+        void push(char ch);
+        void push(const char* data, unsigned size);
+
+        const char* data() const noexcept;
+        unsigned size() const noexcept;
+
+    private:
+        char* m_data;
+        unsigned m_capacity;
+        unsigned m_size;
+    };
+
+
     //! An ultra-fast ring-buffer to pass log entries from the logging thread
     //! to the consumer thread.
     RingBuffer m_messageFifo;
 
-    std::atomic_int m_flags;
+    //! A scratch pad to perform some string conversions.
+    ScratchPad m_scratchPad;
 
+    //! Options for serialization.
+    log11_detail::SerdesOptions m_serdesOptions;
+
+    std::atomic<BinarySinkBase*> m_binarySink;
     std::atomic<TextSink*> m_textSink;
 
-#ifdef LOG11_USE_WEOS
-    weos::thread m_consumerThread;
-#else
-    std::thread m_consumerThread;
-#endif
+    //! Signals changes in the consumer state.
+    std::condition_variable m_consumerThreadCv;
+    //! A mutex for the consumer thread state.
+    std::mutex m_consumerThreadMutex;
+    //! The state of the consumer thread.
+    ConsumerState m_consumerState{Initial};
+
 
 
     template <typename TArg, typename... TArgs>
     static
-    std::size_t doRequiredSize(const TArg& arg, const TArgs&... args)
+    std::size_t doRequiredSize(const log11_detail::SerdesOptions& opt,
+                               const TArg& arg, const TArgs&... args)
     {
-        return sizeof(void*)
-               + log11_detail::Serdes<std::decay_t<TArg>>::requiredSize(arg)
-               + doRequiredSize(args...);
+        return log11_detail::serdes_t<TArg>::requiredSize(opt, arg)
+               + doRequiredSize(opt, args...);
     }
 
     static
-    std::size_t doRequiredSize()
+    std::size_t doRequiredSize(const log11_detail::SerdesOptions&)
     {
         return 0;
     }
@@ -125,26 +176,25 @@ private:
 
     template <typename TArg, typename... TArgs>
     static
-    void doSerialize(RingBuffer::Stream& stream,
+    void doSerialize(const log11_detail::SerdesOptions& opt,
+                     RingBuffer::Stream& stream,
                      const TArg& arg, const TArgs&... args)
     {
-        auto* serdes = log11_detail::Serdes<std::decay_t<TArg>>::instance();
-        if (stream.write(&serdes, sizeof(void*))
-            && serdes->serialize(stream, arg))
+        if (log11_detail::serdes_t<TArg>::serialize(opt, stream, arg))
         {
-            doSerialize(stream, args...);
+            doSerialize(opt, stream, args...);
         }
     }
 
     static
-    void doSerialize(RingBuffer::Stream&)
+    void doSerialize(const log11_detail::SerdesOptions&, RingBuffer::Stream&)
     {
     }
 
 
     void consumeFifoEntries();
     void writeText(TextSink* sink, RingBuffer::Stream inStream);
-    void writeBinary(RingBuffer::Stream inStream);
+    void writeBinary(BinarySinkBase* sink, RingBuffer::Stream inStream);
 };
 
 template <typename... TArgs>
@@ -154,7 +204,7 @@ void LogCore::log(ClaimPolicy policy, Severity severity,
     using namespace std;
     using namespace log11_detail;
 
-    auto argumentSize = doRequiredSize(args...);
+    auto argumentSize = doRequiredSize(m_serdesOptions, args...);
     auto totalSize = argumentSize + sizeof(LogStatement) + sizeof(const char*);
 
     RingBuffer::Block claimed;
@@ -176,7 +226,7 @@ void LogCore::log(ClaimPolicy policy, Severity severity,
     stream.write(&format, sizeof(const char*));
 
     // Serialize all the arguments.
-    doSerialize(stream, args...);
+    doSerialize(m_serdesOptions, stream, args...);
 
     if (policy == Block)
         m_messageFifo.publish(claimed);

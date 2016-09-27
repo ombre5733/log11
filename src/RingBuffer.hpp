@@ -28,6 +28,7 @@
 #define LOG11_RINGBUFFER_HPP
 
 #include "_config.hpp"
+#include "String.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -53,6 +54,10 @@ public:
         bool read(void* dest, unsigned size) noexcept;
 
         bool write(const void* source, unsigned size) noexcept;
+
+        bool readString(log11_detail::SplitString& view, unsigned size) noexcept;
+
+        bool writeString(const void* source, unsigned size) noexcept;
 
     private:
         RingBuffer& m_buffer;
@@ -150,7 +155,7 @@ public:
 
     void write(unsigned begin, const void* source, unsigned size) noexcept;
 
-    std::pair<Slice, Slice> unwrap(const Block& range) const noexcept;
+    void unwrap(unsigned begin, log11_detail::SplitString& view, unsigned size) const noexcept;
 
 private:
     //! The ring buffer's data.

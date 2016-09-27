@@ -24,31 +24,38 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_STRINGREF_HPP
-#define LOG11_STRINGREF_HPP
-
-#include "_config.hpp"
+#ifndef LOG11_SPLITSTRING_HPP
+#define LOG11_SPLITSTRING_HPP
 
 #include <cstddef>
-#include <cstring>
+#include <type_traits>
 
 
 namespace log11
 {
 
-class StringRef
+#if 0
+class StringLiteral
 {
 public:
-    explicit
-    StringRef(const char* str)
+    template <typename T,
+              typename = std::enable_if_t<std::is_same<std::decay_t<T>, const char*>::value>>
+    StringLiteral(T str)
         : m_data(str),
-          m_length(std::strlen(str))
+          m_size(str ? std::strlen(str) : 0)
     {
     }
 
-    StringRef(const char* str, std::size_t length)
+    StringLiteral(const char* str, std::size_t length)
         : m_data(str),
-          m_length(length)
+          m_size(length)
+    {
+    }
+
+    template <std::size_t N>
+    StringLiteral(const char (&str)[N])
+        : m_data(str),
+          m_size(N)
     {
     }
 
@@ -59,14 +66,27 @@ public:
 
     std::size_t size() const noexcept
     {
-        return m_length;
+        return m_size;
     }
 
 private:
     const char* m_data;
-    std::size_t m_length;
+    std::size_t m_size;
+};
+#endif
+
+namespace log11_detail
+{
+
+struct SplitString
+{
+    const char* begin1;
+    const char* begin2;
+    unsigned length1;
+    unsigned length2;
 };
 
+} // namespace log11_detail
 } // namespace log11
 
-#endif // LOG11_STRINGREF_HPP
+#endif // LOG11_SPLITSTRING_HPP

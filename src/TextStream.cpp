@@ -25,8 +25,7 @@
 *******************************************************************************/
 
 #include "TextStream.hpp"
-
-#include "SplitString.hpp"
+#include "String.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -63,6 +62,94 @@ void TextForwarderSink::putString(const char* str, std::size_t size)
 }
 
 } // namespace log11_detail
+
+// ----=====================================================================----
+//     TextStream::Format
+// ----=====================================================================----
+
+const char* TextStream::Format::parse(const char* str)
+{
+    // // argument index
+    // while (*str >= '0' && *str <= '9')
+    //     m_argumentIndex = 10 * m_argumentIndex + (*str++ - '0');
+    //
+    // // argument separator
+    // if (*str == ':')
+    //     ++str;
+
+    if (*str == 0)
+        return str;
+    switch (str[1])
+    {
+    case '<':
+    case '>':
+    case '^':
+    case '=':
+        fill = *str++;
+    }
+
+    // align
+    switch (*str)
+    {
+    case '<': align = Left; ++str; break;
+    case '>': align = Right; ++str; break;
+    case '^': align = Centered; ++str; break;
+    case '=': align = AlignAfterSign; ++str; break;
+    }
+
+    // sign
+    switch (*str)
+    {
+    case '+': sign = Always; ++str; break;
+    case '-': sign = OnlyNegative; ++str; break;
+    case ' ': sign = SpaceForPositive; ++str; break;
+    }
+
+    // base prefix
+    if (*str == '#')
+    {
+        basePrefix = true;
+        ++str;
+    }
+
+    if (*str == '0')
+    {
+        ++str;
+        fill = '0';
+        align = AlignAfterSign;
+    }
+
+    // width
+    while (*str >= '0' && *str <= '9')
+        width = 10 * width + (*str++ - '0');
+
+    // precision
+    if (*str == '.')
+    {
+        ++str;
+        while (*str >= '0' && *str <= '9')
+            m_precision = 10 * m_precision + (*str++ - '0');
+    }
+
+    // type
+    switch (*str)
+    {
+    case 'b': type = Binary; break;
+    case 'c': type = Character; break;
+    case 'd': type = Decimal; break;
+    case 'o': type = Octal; break;
+    case 'x': type = Hex; break;
+    case 'X': type = Hex; upperCase = true; break;
+
+        // TODO: float formats
+    //case 'f':
+    //case 'F':
+    //case 'g':
+    //case 'G':
+    }
+
+    return str;
+}
 
 // ----=====================================================================----
 //     TextStream
@@ -104,7 +191,7 @@ TextStream& TextStream::operator<<(char ch)
 
 TextStream& TextStream::operator<<(signed char value)
 {
-    if (value > 0)
+    if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
@@ -121,7 +208,7 @@ TextStream& TextStream::operator<<(unsigned char value)
 
 TextStream& TextStream::operator<<(short value)
 {
-    if (value > 0)
+    if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
@@ -138,7 +225,7 @@ TextStream& TextStream::operator<<(unsigned short value)
 
 TextStream& TextStream::operator<<(int value)
 {
-    if (value > 0)
+    if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
@@ -155,7 +242,7 @@ TextStream& TextStream::operator<<(unsigned int value)
 
 TextStream& TextStream::operator<<(long value)
 {
-    if (value > 0)
+    if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
@@ -172,7 +259,7 @@ TextStream& TextStream::operator<<(unsigned long value)
 
 TextStream& TextStream::operator<<(long long value)
 {
-    if (value > 0)
+    if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
@@ -226,7 +313,7 @@ TextStream& TextStream::operator<<(const void* value)
     m_format.basePrefix = true;
     m_format.type = Format::Hex;
 
-    printInteger(uintptr_t(value), false);
+    printInteger(uintptr_t(value), false); // TODO: call printIntegerDigits directly
     reset();
     return *this;
 }
@@ -240,6 +327,16 @@ TextStream& TextStream::operator<<(const char* str)
     // TODO: padding
 
     m_sink->putString(str, std::strlen(str));
+    reset();
+    return *this;
+}
+
+TextStream& TextStream::operator<<(Immutable<const char*> str)
+{
+    // TODO: padding
+
+    m_sink->putString(static_cast<const char*>(str),
+                      std::strlen(static_cast<const char*>(str)));
     reset();
     return *this;
 }

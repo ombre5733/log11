@@ -81,6 +81,35 @@ bool RingBuffer::Stream::write(const void* source, unsigned size) noexcept
     }
 }
 
+bool RingBuffer::Stream::readString(log11_detail::SplitString& view, unsigned size) noexcept
+{
+    if (m_length == 0)
+        return false;
+
+    if (size > m_length)
+        size = m_length;
+    m_buffer.unwrap(m_begin, view, size);
+    m_begin += size;
+    m_length -= size;
+    return true;
+}
+
+bool RingBuffer::Stream::writeString(const void* source, unsigned size) noexcept
+{
+    if (m_length == 0)
+        return false;
+
+    if (size > m_length)
+        size = m_length;
+    if (size)
+    {
+        m_buffer.write(m_begin, source, size);
+        m_begin += size;
+        m_length -= size;
+    }
+    return true;
+}
+
 // ----=====================================================================----
 //     RingBuffer::Block
 // ----=====================================================================----
@@ -322,20 +351,22 @@ void RingBuffer::write(unsigned begin, const void* source, unsigned size) noexce
     }
 }
 
-auto RingBuffer::unwrap(const Block& range) const noexcept -> std::pair<Slice, Slice>
+void RingBuffer::unwrap(unsigned begin, log11_detail::SplitString& view, unsigned size) const noexcept
 {
-    unsigned begin = range.m_begin % m_size;
+    begin %= m_size;
     unsigned restSize = m_size - begin;
-    if (range.m_length <= restSize)
+    if (size <= restSize)
     {
-        return std::pair<Slice, Slice>(
-                    Slice(static_cast<char*>(m_data) + begin, range.m_length),
-                    Slice(nullptr, 0));
+        view.begin1 = static_cast<char*>(m_data) + begin;
+        view.length1 = size;
+        view.begin2 = nullptr;
+        view.length2 = 0;
     }
     else
     {
-        return std::pair<Slice, Slice>(
-                    Slice(static_cast<char*>(m_data) + begin, restSize),
-                    Slice(m_data, range.m_length - restSize));
+        view.begin1 = static_cast<char*>(m_data) + begin;
+        view.length1 = restSize;
+        view.begin2 = static_cast<char*>(m_data);
+        view.length2 = size - restSize;
     }
 }

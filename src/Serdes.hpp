@@ -27,11 +27,14 @@
 #ifndef LOG11_SERDES_HPP
 #define LOG11_SERDES_HPP
 
+#include "BinaryStream.hpp"
 #include "RingBuffer.hpp"
 #include "TextStream.hpp"
+#include "Utility.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 
@@ -40,31 +43,44 @@ namespace log11
 namespace log11_detail
 {
 
+struct SerdesOptions
+{
+    bool isImmutable(const char* str) const noexcept
+    {
+        using namespace std;
+        return uintptr_t(str) < immutableStringEnd
+               && uintptr_t(str) >= immutableStringBegin;
+    }
+
+    std::uintptr_t immutableStringBegin{0};
+    std::uintptr_t immutableStringEnd{0};
+};
+
 class SerdesBase
 {
 public:
+    SerdesBase(const SerdesBase&) = delete;
+    SerdesBase& operator=(const SerdesBase&) = delete;
+
     virtual
     ~SerdesBase();
 
-    //virtual
-    //RingBuffer::Block skip(RingBuffer& buffer,
-    //                       RingBuffer::Block range) const noexcept = 0;
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     BinaryStream& outStream) const noexcept = 0;
 
     virtual
     bool deserialize(RingBuffer::Stream& inStream,
                      TextStream& outStream) const noexcept = 0;
 
-    //virtual
-    //void deserialize(RingBuffer& buffer, RingBuffer::Range range, BinaryStream& stream) const noexcept = 0;
+protected:
+    SerdesBase() = default;
 };
 
 template <typename T>
 class Serdes : public SerdesBase
 {
 public:
-    Serdes(const Serdes&) = delete;
-    Serdes& operator=(const Serdes&) = delete;
-
     static
     Serdes* instance()
     {
@@ -73,32 +89,35 @@ public:
     }
 
     static
-    std::size_t requiredSize(const T&) noexcept
+    std::size_t requiredSize(const SerdesOptions&, const T&) noexcept
     {
-        return sizeof(T);
+        return sizeof(void*) + sizeof(T);
     }
 
     static
-    bool serialize(RingBuffer::Stream& stream, const T& value) noexcept
+    bool serialize(const SerdesOptions&,
+                   RingBuffer::Stream& stream, const T& value) noexcept
     {
-        return stream.write(&value, sizeof(T));
+        SerdesBase* serdes = instance();
+        return stream.write(&serdes, sizeof(void*))
+               && stream.write(&value, sizeof(T));
     }
 
-    //virtual
-    //RingBuffer::Block skip(RingBuffer&, RingBuffer::Block range) const noexcept override
-    //{
-    //    // TODO: Bounds check
-    //    if (range.m_length >= sizeof(T))
-    //    {
-    //        range.m_begin += sizeof(T);
-    //        range.m_length -= sizeof(T);
-    //    }
-    //    else
-    //    {
-    //        range.m_length = 0;
-    //    }
-    //    return range;
-    //}
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     BinaryStream& outStream) const noexcept override
+    {
+        T temp;
+        if (inStream.read(&temp, sizeof(T)))
+        {
+            outStream.doWrite(std::move(temp), log11_detail::is_custom<T>());
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
 
     virtual
     bool deserialize(RingBuffer::Stream& inStream,
@@ -115,23 +134,75 @@ public:
             return false;
         }
     }
-
-    //virtual
-    //void deserialize(RingBuffer& buffer, RingBuffer::Range range,
-    //                 BinaryStream& stream) const noexcept override
-    //{
-    //    if (range.length >= sizeof(T))
-    //    {
-    //        T temp;
-    //        buffer.read(range, &temp, sizeof(T));
-    //        // TODO
-    //    }
-    //    // TODO: return new range?
-    //}
-
-private:
-    Serdes() = default;
 };
+
+class CharStarSerdes : public SerdesBase
+{
+public:
+    static
+    std::size_t requiredSize(const SerdesOptions& opt, const char* str) noexcept;
+
+    static
+    bool serialize(const SerdesOptions& opt,
+                   RingBuffer::Stream& stream, const char* str) noexcept;
+};
+
+class ImmutableCharStarSerdes : public CharStarSerdes
+{
+public:
+    static
+    ImmutableCharStarSerdes* instance();
+
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     BinaryStream& outStream) const noexcept override;
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     TextStream& outStream) const noexcept override;
+};
+
+class MutableCharStarSerdes : public CharStarSerdes
+{
+public:
+    static
+    MutableCharStarSerdes* instance();
+
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     BinaryStream& outStream) const noexcept override;
+
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     TextStream& outStream) const noexcept override;
+};
+
+template <typename T>
+struct SerdesSelector
+{
+    using type = Serdes<T>;
+};
+
+template <typename U>
+struct SerdesStarSelector
+{
+    using type = Serdes<const void*>;
+};
+
+template <>
+struct SerdesStarSelector<char>
+{
+    using type = MutableCharStarSerdes;
+};
+
+// Fold the serializers for pointer into void* serializers
+// (except for C-strings).
+template <typename T>
+struct SerdesSelector<T*> : public SerdesStarSelector<std::remove_cv_t<T>>
+{
+};
+
+template <typename T>
+using serdes_t = typename SerdesSelector<std::decay_t<T>>::type;
 
 } // namespace log11_detail
 } // namespace log11

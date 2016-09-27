@@ -246,8 +246,8 @@ private:
                 m_sink->putChar('0' + digit);
             else
                 m_sink->putChar(digit < 10 ? '0' + digit
-                                           : (m_upperCase ? 'A' + digit - 10
-                                                          : 'a' + digit - 10));
+                                           : (m_upperCase ? 'A' - 10 + digit
+                                                          : 'a' - 10 + digit));
             x -= digit * mask;
             mask /= Base;
         }
@@ -331,7 +331,12 @@ const char* Formatter::parse(const char* str)
         ++str;
     }
 
-    // TODO: if (ch == '0') {}
+    if (*str == '0')
+    {
+        ++str;
+        m_fill = '0';
+        m_align = AlignAfterSign;
+    }
 
     // width
     while (*str >= '0' && *str <= '9')
@@ -542,6 +547,91 @@ void print(const Formatter& s)
 
     cout << endl;
 }
+
+
+class Fmt
+{
+public:
+
+    void printBool(bool v);
+    void printCharacter(char v);
+    void printInteger(std::int64_t v);
+    void printInteger(std::uint64_t v);
+    void printFloat(double v);
+    void printFloatFixPoint(double v);
+    void printFloatScientific(double v);
+    void printPointer(const void* v);
+    void printString(const char* v);
+    void printString(StringRef v);
+
+    void print(bool v);
+
+    void print(char v);
+
+    template <typename T>
+    std::enable_if_t<std::is_integral<T>::value && std::is_signed<T>::value>
+    print(T v);
+
+    template <typename T>
+    std::enable_if_t<std::is_integral<T>::value && !std::is_signed<T>::value>
+    print(T v);
+
+
+};
+
+
+
+struct Xyz
+{
+};
+
+void log(Fmt& f, Xyz& v);
+
+
+
+
+
+class Vormatter
+{
+public:
+    const char* parseFormat(const char* spec);
+
+
+    Vormatter& print(bool value);
+    Vormatter& print(char value);
+    Vormatter& print(signed char value);
+    Vormatter& print(unsigned char value);
+
+    Vormatter& print(short value);
+    Vormatter& print(unsigned short value);
+
+    Vormatter& print(int value);
+    Vormatter& print(unsigned int value);
+
+    // ...
+
+    Vormatter& print(float value);
+    Vormatter& print(double value);
+
+    // ... const void*, nullptr_t, const char* ...
+
+
+    Vormatter& print(const char* spec, bool value);
+
+    // ...
+
+
+private:
+};
+
+
+Vormatter& Vormatter::print(bool value)
+{
+
+}
+
+
+
 
 
 int main()

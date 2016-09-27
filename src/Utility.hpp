@@ -24,14 +24,39 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_META_HPP
-#define LOG11_META_HPP
+#ifndef LOG11_UTILITY_HPP
+#define LOG11_UTILITY_HPP
 
 #include <type_traits>
 
 
 namespace log11
 {
+
+template <typename T>
+class Immutable
+{
+public:
+    Immutable() = default;
+
+    constexpr explicit
+    Immutable(T v)
+        : m_value(v)
+    {
+    }
+
+    explicit
+    operator T()
+    {
+        return m_value;
+    }
+
+private:
+    T m_value;
+};
+
+
+
 namespace log11_detail
 {
 
@@ -84,4 +109,4 @@ struct is_custom : std::integral_constant<
 } // namespace log11_detail
 } // namespace log11
 
-#endif // LOG11_META_HPP
+#endif // LOG11_UTILITY_HPP

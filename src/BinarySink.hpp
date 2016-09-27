@@ -27,7 +27,7 @@
 #ifndef LOG11_BINARYSINK_HPP
 #define LOG11_BINARYSINK_HPP
 
-#include "Severity.hpp"
+#include "BinarySinkBase.hpp"
 
 #include <cstddef>
 
@@ -35,16 +35,42 @@
 namespace log11
 {
 
-//! A logger sink for binary log entriess.
-class BinarySink
+class BinarySink : public BinarySinkBase
 {
 public:
-    using byte = std::uint8_t; // TODO: std::byte
+    enum class TypeTag
+    {
+        False,
+        True,
 
+        Char,
 
-    //! Destroys the sink.
-    virtual
-    ~BinarySink();
+        Int8,
+        Int16,
+        Int32,
+        Int64,
+
+        VarInt16,
+        VarInt32,
+        VarInt64,
+
+        Uint8,
+        Uint16,
+        Uint32,
+        Uint64,
+
+        VarUint16,
+        VarUint32,
+        VarUint64,
+
+        VoidStar,
+
+        String,
+        StringView,
+
+        CustomTypeEnd
+    };
+
 
     //! Called when a new log entry starts.
     virtual
@@ -54,46 +80,75 @@ public:
     virtual
     void endLogEntry();
 
+    virtual
+    void writeByte(byte data) = 0;
+
+protected:
+    virtual
+    void write(bool value) override;
 
     virtual
-    void write(bool value) = 0;
+    void write(char ch) override;
 
     virtual
-    void write(char ch) = 0;
+    void write(signed char value) override;
 
     virtual
-    void write(signed char value) = 0;
-    virtual
-    void write(unsigned char value) = 0;
-    virtual
-    void write(short value) = 0;
-    virtual
-    void write(unsigned short value) = 0;
-    virtual
-    void write(int value) = 0;
-    virtual
-    void write(unsigned int value) = 0;
-    virtual
-    void write(long value) = 0;
-    virtual
-    void write(unsigned long value) = 0;
-    virtual
-    void write(long long value) = 0;
-    virtual
-    void write(unsigned long long value) = 0;
+    void write(unsigned char value) override;
 
     virtual
-    void write(float value) = 0;
-    virtual
-    void write(double value) = 0;
-    virtual
-    void write(long double value) = 0;
+    void write(short value) override;
 
     virtual
-    void write(const char* str) = 0;
+    void write(unsigned short value) override;
 
     virtual
-    void write(const void* value) = 0;
+    void write(int value) override;
+
+    virtual
+    void write(unsigned int value) override;
+
+    virtual
+    void write(long value) override;
+
+    virtual
+    void write(unsigned long value) override;
+
+    virtual
+    void write(long long value) override;
+
+    virtual
+    void write(unsigned long long value) override;
+
+    virtual
+    void write(float value) override;
+
+    virtual
+    void write(double value) override;
+
+    virtual
+    void write(long double value) override;
+
+    virtual
+    void write(const void* value) override;
+
+    virtual
+    void write(Immutable<const char*> str) override;
+
+
+
+    void writeTag(TypeTag tag);
+
+    template <typename T>
+    void writeInteger(T value);
+
+    void writeVarInt(int value);
+
+    void writeVarInt(unsigned value);
+
+    void writeVarInt(long long value);
+
+    void writeVarInt(unsigned long long value);
 };
 
 } // namespace log11

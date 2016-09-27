@@ -58,7 +58,9 @@ public:
     template <typename F>
     void notify(atomic_type& /*object*/, F&& func)
     {
+        m_mutex.lock();
         func();
+        m_mutex.unlock();
         m_cv.notify_all();
     }
 

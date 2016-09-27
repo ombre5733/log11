@@ -27,8 +27,9 @@
 #ifndef LOG11_TEXTSTREAM_HPP
 #define LOG11_TEXTSTREAM_HPP
 
-#include "Meta.hpp"
+#include "_config.hpp"
 #include "TextSink.hpp"
+#include "Utility.hpp"
 
 #include <cstddef>
 #include <type_traits>
@@ -184,10 +185,16 @@ public:
     TextStream& operator<<(const void* value);
 
     TextStream& operator<<(const char* str);
+    TextStream& operator<<(Immutable<const char*> str);
     TextStream& operator<<(const log11_detail::SplitString& str);
 
     template <typename... TArgs>
     TextStream& print(const char* fmt, TArgs&&... args);
+
+    const char* parseFormatString(const char* str)
+    {
+        return m_format.parse(str);
+    }
 
 private:
     using max_int_type = unsigned long long;
@@ -237,6 +244,8 @@ private:
               type(Default)
         {
         }
+
+        const char* parse(const char* str);
 
         int m_argumentIndex;
         int width;

@@ -26,13 +26,144 @@
 
 #include "Serdes.hpp"
 
+
+using namespace std;
+
+
 namespace log11
 {
 namespace log11_detail
 {
 
+// ----=====================================================================----
+//     SerdesBase
+// ----=====================================================================----
+
 SerdesBase::~SerdesBase()
 {
+}
+
+// ----=====================================================================----
+//     CharStarSerdes
+// ----=====================================================================----
+
+std::size_t CharStarSerdes::requiredSize(const log11_detail::SerdesOptions& opt,
+                                         const char* str) noexcept
+{
+    static_assert(sizeof(Immutable<const char*>) == sizeof(const char*), "");
+
+    if (opt.isImmutable(str))
+    {
+        return sizeof(void*) + sizeof(const char*);
+    }
+    else
+    {
+        std::uint16_t length = str ? std::strlen(str) : 0;
+        return sizeof(void*) + sizeof(std::uint16_t) + length;
+    }
+}
+
+bool CharStarSerdes::serialize(const log11_detail::SerdesOptions& opt,
+                               RingBuffer::Stream& stream, const char* str) noexcept
+{
+    if (opt.isImmutable(str))
+    {
+        SerdesBase* serdes = ImmutableCharStarSerdes::instance();
+        return stream.write(&serdes, sizeof(void*))
+                && stream.write(&str, sizeof(const char*));
+    }
+    else
+    {
+        SerdesBase* serdes = MutableCharStarSerdes::instance();
+        std::uint16_t length = str ? std::strlen(str) : 0;
+        return stream.write(&serdes, sizeof(void*))
+                && stream.write(&length, sizeof(std::uint16_t))
+                && stream.writeString(str, length);
+    }
+}
+
+// ----=====================================================================----
+//     ImmutableCharStarSerdes
+// ----=====================================================================----
+
+ImmutableCharStarSerdes* ImmutableCharStarSerdes::instance()
+{
+    static ImmutableCharStarSerdes serdes;
+    return &serdes;
+}
+
+bool ImmutableCharStarSerdes::deserialize(
+        RingBuffer::Stream& inStream, BinaryStream& outStream) const noexcept
+{
+    Immutable<const char*> str;
+    if (inStream.read(&str, sizeof(Immutable<const char*>)))
+    {
+        outStream << str;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+bool ImmutableCharStarSerdes::deserialize(
+        RingBuffer::Stream& inStream, TextStream& outStream) const noexcept
+{
+    Immutable<const char*> str;
+    if (inStream.read(&str, sizeof(Immutable<const char*>)))
+    {
+        outStream << str;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+// ----=====================================================================----
+//     MutableCharStarSerdes
+// ----=====================================================================----
+
+MutableCharStarSerdes* MutableCharStarSerdes::instance()
+{
+    static MutableCharStarSerdes serdes;
+    return &serdes;
+}
+
+bool MutableCharStarSerdes::deserialize(
+        RingBuffer::Stream& inStream, BinaryStream& outStream) const noexcept
+{
+    std::uint16_t length;
+    log11_detail::SplitString str;
+    if (inStream.read(&length, sizeof(std::uint16_t))
+        && inStream.readString(str, length))
+    {
+        outStream << str;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+bool MutableCharStarSerdes::deserialize(
+        RingBuffer::Stream& inStream, TextStream& outStream) const noexcept
+{
+    std::uint16_t length;
+    log11_detail::SplitString str;
+    if (inStream.read(&length, sizeof(std::uint16_t))
+        && inStream.readString(str, length))
+    {
+        outStream << str;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 } // namespace log11_detail

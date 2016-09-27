@@ -27,17 +27,34 @@
 #ifndef LOG11_BINARYSTREAM_HPP
 #define LOG11_BINARYSTREAM_HPP
 
+#include "_config.hpp"
+#include "BinarySink.hpp"
+#include "Utility.hpp"
+
 #include <cstdint>
+#include <type_traits>
+#include <utility>
+
+#ifdef LOG11_USE_WEOS
+#include <weos/utility.hpp>
+#endif // LOG11_USE_WEOS
 
 
 namespace log11
 {
+namespace log11_detail
+{
+
+template <typename T>
+class Serdes;
+
+} // namespace log11_detail
 
 class BinaryStream
 {
 public:
     explicit
-    BinaryStream(BinarySink& sink);
+    BinaryStream(BinarySinkBase& sink);
 
     BinaryStream(const BinaryStream&) = delete;
     BinaryStream& operator=(const BinaryStream&) = delete;
@@ -64,15 +81,43 @@ public:
     BinaryStream& operator<<(double value);
     BinaryStream& operator<<(long double value);
 
-    BinaryStream& operator<<(const char* str);
-
     BinaryStream& operator<<(const void* value);
+
+    BinaryStream& operator<<(const char* str);
+    BinaryStream& operator<<(Immutable<const char*> str);
+    BinaryStream& operator<<(const log11_detail::SplitString& str);
 
     void beginStruct(std::uint32_t id);
     void endStruct(std::uint32_t id);
 
     void writeSignedEnum(std::uint32_t id, long long value);
     void writeUnsignedEnum(std::uint32_t id, unsigned long long value);
+
+private:
+    BinarySinkBase* m_sink;
+
+
+    template <typename T>
+    void doWrite(T value, std::false_type)
+    {
+        *this << value;
+    }
+
+    template <typename T>
+    void doWrite(T&& value, std::true_type)
+    {
+        //log11_detail::TextForwarderSink sink(*this);
+        //TextStream chainedStream(sink);
+        //log11_detail::selectCustomPrint(
+        //            chainedStream, std::move(value),
+        //            typename log11_detail::has_member_print<T>::type(),
+        //            typename log11_detail::has_free_print<T>::type(),
+        //            typename log11_detail::has_shift_operator<T>::type());
+    }
+
+
+    template <typename T>
+    friend class log11_detail::Serdes;
 };
 
 } // namespace log11

@@ -30,6 +30,7 @@
 #include "BinarySinkBase.hpp"
 
 #include <cstddef>
+#include <cstdint>
 
 
 namespace log11
@@ -63,10 +64,15 @@ public:
         VarUint32,
         VarUint64,
 
-        VoidStar,
+        Float,
+        Double,
+        LongDouble,
+
+        Pointer,
 
         String,
         StringView,
+        StringPointer,
 
         CustomTypeEnd
     };
@@ -82,6 +88,9 @@ public:
 
     virtual
     void writeByte(byte data) = 0;
+
+    virtual
+    void writeBytes(const byte* data, unsigned size);
 
 protected:
     virtual
@@ -135,6 +144,10 @@ protected:
     virtual
     void write(Immutable<const char*> str) override;
 
+    virtual
+    void write(const log11_detail::SplitString& str) override;
+
+
 
 
     void writeTag(TypeTag tag);
@@ -142,13 +155,13 @@ protected:
     template <typename T>
     void writeInteger(T value);
 
-    void writeVarInt(int value);
+    void writeVarInt(std::uint32_t value);
 
-    void writeVarInt(unsigned value);
+    void writeVarInt(std::int32_t value);
 
-    void writeVarInt(long long value);
+    void writeVarInt(std::uint64_t value);
 
-    void writeVarInt(unsigned long long value);
+    void writeVarInt(std::int64_t value);
 };
 
 } // namespace log11

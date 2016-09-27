@@ -339,14 +339,21 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
 
 void LogCore::writeBinary(BinarySinkBase* sink, RingBuffer::Stream inStream)
 {
-#if 0
-    while (range.length > sizeof(void*))
+    const char* format;
+    if (!inStream.read(&format, sizeof(const char*)))
+        return;
+
+    SplitString str{format, nullptr, strlen(format), 0};
+
+    BinaryStream outStream(*sink);
+    outStream << str;
+    for (;;)
     {
         log11_detail::SerdesBase* serdes;
-        range = m_messageFifo.read(range, &serdes, sizeof(void*));
-        range = serdes->deserialize(m_messageFifo, range, stream);
+        if (!inStream.read(&serdes, sizeof(void*)))
+            break;
+        serdes->deserialize(inStream, outStream);
     }
-#endif
 }
 
 } // namespace log11

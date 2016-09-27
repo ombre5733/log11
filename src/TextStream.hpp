@@ -80,7 +80,7 @@ struct has_free_print : std::false_type
 };
 
 template <typename T>
-struct has_shift_operator : std::false_type
+struct has_textstream_shift_operator : std::false_type
 {
     template <typename U>
     static constexpr auto test(U*) -> decltype(std::declval<log11::TextStream&>() << std::declval<U&>(), std::true_type());
@@ -285,7 +285,7 @@ private:
                     chainedStream, std::move(value),
                     typename log11_detail::has_member_print<T>::type(),
                     typename log11_detail::has_free_print<T>::type(),
-                    typename log11_detail::has_shift_operator<T>::type());
+                    typename log11_detail::has_textstream_shift_operator<T>::type());
     }
 
     void printArgument(unsigned index);

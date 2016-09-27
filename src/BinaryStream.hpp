@@ -106,13 +106,14 @@ private:
     template <typename T>
     void doWrite(T&& value, std::true_type)
     {
+        // TODO
         //log11_detail::TextForwarderSink sink(*this);
         //TextStream chainedStream(sink);
-        //log11_detail::selectCustomPrint(
+        //log11_detail::selectCustomWrite(
         //            chainedStream, std::move(value),
-        //            typename log11_detail::has_member_print<T>::type(),
-        //            typename log11_detail::has_free_print<T>::type(),
-        //            typename log11_detail::has_shift_operator<T>::type());
+        //            typename log11_detail::has_member_write<T>::type(),
+        //            typename log11_detail::has_free_write<T>::type(),
+        //            typename log11_detail::has_binarystream_shift_operator<T>::type());
     }
 
 

@@ -331,17 +331,7 @@ TextStream& TextStream::operator<<(const char* str)
     return *this;
 }
 
-TextStream& TextStream::operator<<(Immutable<const char*> str)
-{
-    // TODO: padding
-
-    m_sink->putString(static_cast<const char*>(str),
-                      std::strlen(static_cast<const char*>(str)));
-    reset();
-    return *this;
-}
-
-TextStream& TextStream::operator<<(const log11_detail::SplitString& str)
+TextStream& TextStream::operator<<(const SplitStringView& str)
 {
     // TODO: padding
 

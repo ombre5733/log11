@@ -35,6 +35,8 @@ using namespace std;
 namespace log11
 {
 
+//! Returns \p true, if it is profitable to store the \p value as varint
+//! (aka LEB128).
 template <typename T>
 constexpr
 std::enable_if_t<std::is_unsigned<T>::value, bool> isVarIntProfitable(T value)
@@ -42,6 +44,8 @@ std::enable_if_t<std::is_unsigned<T>::value, bool> isVarIntProfitable(T value)
     return sizeof(T) > 1 && value < T(1ull << (7 * (sizeof(T) - 1)));
 }
 
+//! Returns \p true, if it is profitable to store the \p value as varint
+//! (aka LEB128).
 template <typename T, typename U = std::make_unsigned_t<T>>
 constexpr
 std::enable_if_t<std::is_signed<T>::value, bool> isVarIntProfitable(T value)
@@ -96,16 +100,6 @@ using promoted_integer_t = typename promote_integer_type_helper<sizeof(T) <= 4, 
 // ----=====================================================================----
 //     BinarySink
 // ----=====================================================================----
-
-void BinarySink::beginLogEntry(Severity severity)
-{
-    // TODO
-}
-
-void BinarySink::endLogEntry()
-{
-    // TODO
-}
 
 void BinarySink::writeBytes(const byte* data, unsigned size)
 {
@@ -220,13 +214,17 @@ void BinarySink::write(const void* value)
 //     String output
 // -----------------------------------------------------------------------------
 
-void BinarySink::write(Immutable<const char*> str)
+//void BinarySink::write(Format<const char*> str);
+//void BinarySink::write(Immutable<Format<const char*>> str);
+
+void BinarySink::write(Immutable<const char*> str,
+                       std::uintptr_t immutableStringSpaceBegin)
 {
     writeTag(TypeTag::StringPointer);
-    writeBytes(reinterpret_cast<byte*>(&str), sizeof(Immutable<const char*>));
+    writeVarInt(uintptr_t(str.get()) - immutableStringSpaceBegin);
 }
 
-void BinarySink::write(const log11_detail::SplitString& str)
+void BinarySink::write(const SplitStringView& str)
 {
     writeTag(TypeTag::String);
     auto totalSize = str.length1 + str.length2;
@@ -236,6 +234,20 @@ void BinarySink::write(const log11_detail::SplitString& str)
         writeBytes(reinterpret_cast<const byte*>(str.begin1), str.length1);
     if (str.length2)
         writeBytes(reinterpret_cast<const byte*>(str.begin2), str.length2);
+}
+
+// -----------------------------------------------------------------------------
+//     User-defined types output
+// -----------------------------------------------------------------------------
+
+void BinarySink::beginStruct(std::uint32_t tag)
+{
+    writeVarInt(tag << 1);
+}
+
+void BinarySink::endStruct(std::uint32_t /*tag*/)
+{
+    writeTag(TypeTag::EndOfStruct);
 }
 
 // ----=====================================================================----

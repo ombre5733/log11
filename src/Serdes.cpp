@@ -36,6 +36,16 @@ namespace log11_detail
 {
 
 // ----=====================================================================----
+//     SerdesOptions
+// ----=====================================================================----
+
+bool SerdesOptions::isImmutable(const char* str) const noexcept
+{
+    return uintptr_t(str) < immutableStringEnd
+           && uintptr_t(str) >= immutableStringBegin;
+}
+
+// ----=====================================================================----
 //     SerdesBase
 // ----=====================================================================----
 
@@ -113,7 +123,7 @@ bool ImmutableCharStarSerdes::deserialize(
     Immutable<const char*> str;
     if (inStream.read(&str, sizeof(Immutable<const char*>)))
     {
-        outStream << str;
+        outStream << static_cast<const char*>(str); // TODO: Should we do this?
         return true;
     }
     else
@@ -136,7 +146,7 @@ bool MutableCharStarSerdes::deserialize(
         RingBuffer::Stream& inStream, BinaryStream& outStream) const noexcept
 {
     std::uint16_t length;
-    log11_detail::SplitString str;
+    SplitStringView str;
     if (inStream.read(&length, sizeof(std::uint16_t))
         && inStream.readString(str, length))
     {
@@ -153,7 +163,7 @@ bool MutableCharStarSerdes::deserialize(
         RingBuffer::Stream& inStream, TextStream& outStream) const noexcept
 {
     std::uint16_t length;
-    log11_detail::SplitString str;
+    SplitStringView str;
     if (inStream.read(&length, sizeof(std::uint16_t))
         && inStream.readString(str, length))
     {

@@ -38,6 +38,23 @@ using namespace log11;
 using namespace std;
 
 // ----=====================================================================----
+//     Utilities
+// ----=====================================================================----
+
+static
+unsigned nextPowerOf2(unsigned x) noexcept
+{
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    ++x;
+    return x;
+}
+
+// ----=====================================================================----
 //     RingBuffer::Stream
 // ----=====================================================================----
 
@@ -47,6 +64,11 @@ RingBuffer::Stream::Stream(
       m_begin(begin),
       m_length(length)
 {
+}
+
+RingBuffer::byte RingBuffer::Stream::peek() noexcept
+{
+    return *static_cast<byte*>(m_buffer.data(m_begin));
 }
 
 bool RingBuffer::Stream::read(void* dest, unsigned size) noexcept
@@ -81,7 +103,7 @@ bool RingBuffer::Stream::write(const void* source, unsigned size) noexcept
     }
 }
 
-bool RingBuffer::Stream::readString(log11_detail::SplitString& view, unsigned size) noexcept
+bool RingBuffer::Stream::readString(SplitStringView& view, unsigned size) noexcept
 {
     if (m_length == 0)
         return false;
@@ -124,8 +146,9 @@ RingBuffer::Stream RingBuffer::Block::stream(RingBuffer& buffer) noexcept
 //     RingBuffer
 // ----=====================================================================----
 
-RingBuffer::RingBuffer(unsigned exponent)
-    : m_size(1u << exponent),
+RingBuffer::RingBuffer(unsigned size)
+    : m_data(nullptr),
+      m_size(nextPowerOf2(size)),
       m_claimed(0),
       m_published(0),
       m_consumed(0),
@@ -139,12 +162,13 @@ RingBuffer::RingBuffer(unsigned exponent)
 
 RingBuffer::~RingBuffer()
 {
-    ::operator delete(m_data);
+    if (m_data)
+        ::operator delete(m_data);
 }
 
 auto RingBuffer::claim(unsigned numElements) -> Block
 {
-    numElements += 2;
+    numElements = (numElements + 3) & ~1;
     if (numElements > m_size)
         numElements = m_size;
 
@@ -167,10 +191,10 @@ auto RingBuffer::claim(unsigned numElements) -> Block
 
 auto RingBuffer::tryClaim(unsigned minNumElements, unsigned maxNumElements) -> Block
 {
-    minNumElements += 2;
+    minNumElements = (minNumElements + 3) & ~1;
     if (minNumElements > m_size)
         minNumElements = m_size;
-    maxNumElements += 2;
+    maxNumElements = (maxNumElements + 3) & ~1;
     if (maxNumElements > m_size)
         maxNumElements = m_size;
 
@@ -351,7 +375,7 @@ void RingBuffer::write(unsigned begin, const void* source, unsigned size) noexce
     }
 }
 
-void RingBuffer::unwrap(unsigned begin, log11_detail::SplitString& view, unsigned size) const noexcept
+void RingBuffer::unwrap(unsigned begin, SplitStringView& view, unsigned size) const noexcept
 {
     begin %= m_size;
     unsigned restSize = m_size - begin;
@@ -369,4 +393,9 @@ void RingBuffer::unwrap(unsigned begin, log11_detail::SplitString& view, unsigne
         view.begin2 = static_cast<char*>(m_data);
         view.length2 = size - restSize;
     }
+}
+
+unsigned RingBuffer::size() const noexcept
+{
+    return m_size;
 }

@@ -27,8 +27,10 @@
 #ifndef LOG11_TEXTSINK_HPP
 #define LOG11_TEXTSINK_HPP
 
+#include "LogRecordData.hpp"
 #include "Severity.hpp"
 
+#include <chrono>
 #include <cstddef>
 
 
@@ -48,7 +50,7 @@ public:
 
     //! Called when a new log entry starts.
     virtual
-    void beginLogEntry(Severity severity);
+    void beginLogEntry(const LogRecordData& data);
 
     //! Called when a log entry ends.
     virtual

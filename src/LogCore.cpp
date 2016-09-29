@@ -43,14 +43,6 @@ namespace log11
 namespace log11_detail
 {
 
-LogStatement::LogStatement(Severity s)
-    : timeStamp(std::chrono::high_resolution_clock::now().time_since_epoch().count())
-    , isTruncated(false)
-    , isControl(false)
-    , severity(static_cast<int>(s))
-{
-}
-
 template <typename T, typename... TArgs>
 void prepareSerializer(TypeList<T, TArgs...>)
 {
@@ -60,6 +52,8 @@ void prepareSerializer(TypeList<T, TArgs...>)
 
 void prepareSerializer(TypeList<>)
 {
+    ImmutableCharStarSerdes::instance();
+    MutableCharStarSerdes::instance();
 }
 
 } // namespace log11_detail
@@ -69,98 +63,24 @@ using namespace log11_detail;
 
 
 // ----=====================================================================----
-//     LogCore::ScratchPad
-// ----=====================================================================----
-
-LogCore::ScratchPad::ScratchPad(unsigned capacity)
-    : m_data(new char[capacity]),
-      m_capacity(capacity),
-      m_size(0)
-{
-}
-
-LogCore::ScratchPad::~ScratchPad()
-{
-    if (m_data)
-        delete[] m_data;
-}
-
-void LogCore::ScratchPad::reserve(unsigned capacity, bool keepContent)
-{
-    if (capacity <= m_capacity)
-        return;
-
-    if (keepContent && m_size)
-    {
-        char* newData = new char[capacity];
-        memcpy(newData, m_data, m_size);
-        delete[] m_data;
-        m_data = newData;
-        m_capacity = capacity;
-    }
-    else
-    {
-        delete[] m_data;
-        m_data = nullptr;
-        m_data = new char[capacity];
-        m_capacity = capacity;
-        m_size = 0;
-    }
-}
-
-void LogCore::ScratchPad::push(char ch)
-{
-    if (m_size == m_capacity)
-        reserve((m_size + 7) & ~7, true);
-    m_data[m_size] = ch;
-    ++m_size;
-}
-
-void LogCore::ScratchPad::push(const char* data, unsigned size)
-{
-    unsigned newSize = m_size + size;
-    if (newSize > m_capacity)
-        reserve((newSize + 7) & ~7, true);
-    memcpy(m_data + m_size, data, size);
-    m_size = newSize;
-}
-
-const char* LogCore::ScratchPad::data() const noexcept
-{
-    return m_data;
-}
-
-unsigned LogCore::ScratchPad::size() const noexcept
-{
-    return m_size;
-}
-
-// ----=====================================================================----
 //     LogCore
 // ----=====================================================================----
 
-LogCore::LogCore(unsigned exponent, TextSink* textSink, BinarySinkBase* binarySink)
-    : m_messageFifo(exponent),
-      m_scratchPad(32),
-      m_binarySink(binarySink),
-      m_textSink(textSink)
-{
-    log11_detail::prepareSerializer(log11_detail::builtin_types());
-
 #ifdef LOG11_USE_WEOS
-    weos::thread(attrs, &LogCore::consumeFifoEntries, this).detach();
+LogCore::LogCore(const weos::thread_attributes& attrs, std::size_t bufferSize)
 #else
-    std::thread(&LogCore::consumeFifoEntries, this).detach();
-#endif // LOG11_USE_WEOS
-}
-
-LogCore::LogCore(unsigned exponent, BinarySinkBase* binarySink, TextSink* textSink)
-    : m_messageFifo(exponent),
-      m_scratchPad(32),
-      m_binarySink(binarySink),
-      m_textSink(textSink)
+LogCore::LogCore(std::size_t bufferSize)
+#endif
+    : m_messageFifo(bufferSize)
+    , m_scratchPad(32)
+    , m_crossThreadChangeOngoing(false)
+    , m_binarySink(nullptr)
+    , m_textSink(nullptr)
+    , m_headerGenerator(nullptr)
 {
     log11_detail::prepareSerializer(log11_detail::builtin_types());
+
+    m_headerGenerator = RecordHeaderGenerator::parse("[{D} {H}:{M}:{S}.{us} {L}] ");
 
 #ifdef LOG11_USE_WEOS
     weos::thread(attrs, &LogCore::consumeFifoEntries, this).detach();
@@ -171,29 +91,69 @@ LogCore::LogCore(unsigned exponent, BinarySinkBase* binarySink, TextSink* textSi
 
 LogCore::~LogCore()
 {
-    LogStatement stmt;
-    stmt.isControl = 1;
-    stmt.severity = static_cast<int>(LogStatement::Command::Terminate);
-    auto claimed = m_messageFifo.claim(sizeof(stmt));
-    claimed.stream(m_messageFifo).write(&stmt, sizeof(LogStatement));
+    auto claimed = m_messageFifo.claim(m_messageFifo.size());
+    claimed.stream(m_messageFifo).write(Directive::command(Directive::Terminate));
     m_messageFifo.publish(claimed);
 
     unique_lock<mutex> lock(m_consumerThreadMutex);
     m_consumerThreadCv.wait(lock,
                             [&] { return m_consumerState == Terminated; });
+
+    if (m_headerGenerator)
+        delete m_headerGenerator;
 }
 
-void LogCore::enableImmutableStringOptimization(
+void LogCore::setSinks(BinarySinkBase* binarySink, TextSink* textSink)
+{
+    m_crossThreadChangeOngoing = true;
+
+    auto claimed = m_messageFifo.claim(m_messageFifo.size());
+    auto stream = claimed.stream(m_messageFifo);
+    stream.write(Directive::command(Directive::SetBothSinks));
+    stream.write(&binarySink, sizeof(BinarySinkBase*));
+    stream.write(&textSink, sizeof(TextSink*));
+    m_messageFifo.publish(claimed);
+}
+
+void LogCore::setSink(BinarySinkBase* binarySink)
+{
+    m_crossThreadChangeOngoing = true;
+
+    auto claimed = m_messageFifo.claim(m_messageFifo.size());
+    auto stream = claimed.stream(m_messageFifo);
+    stream.write(Directive::command(Directive::SetBinarySink));
+    stream.write(&binarySink, sizeof(BinarySinkBase*));
+    m_messageFifo.publish(claimed);
+}
+
+void LogCore::setSink(TextSink* textSink)
+{
+    m_crossThreadChangeOngoing = true;
+
+    auto claimed = m_messageFifo.claim(m_messageFifo.size());
+    auto stream = claimed.stream(m_messageFifo);
+    stream.write(Directive::command(Directive::SetTextSink));
+    stream.write(&textSink, sizeof(TextSink*));
+    m_messageFifo.publish(claimed);
+}
+
+void LogCore::setImmutableStringSpace(
         uintptr_t beginAddress, uintptr_t endAddress)
 {
-    // TODO: Pause the consumer
+    m_crossThreadChangeOngoing = true;
 
-    m_serdesOptions.immutableStringBegin = beginAddress;
-    m_serdesOptions.immutableStringEnd = endAddress;
+    auto claimed = m_messageFifo.claim(m_messageFifo.size());
+    auto stream = claimed.stream(m_messageFifo);
+    stream.write(Directive::command(Directive::SetImmutableSpace));
+    stream.write(beginAddress);
+    stream.write(endAddress);
+    m_messageFifo.publish(claimed);
 }
 
 void LogCore::consumeFifoEntries()
 {
+    using namespace std::chrono;
+
     struct BlockConsumer
     {
         BlockConsumer(RingBuffer& buffer, RingBuffer::Block& block)
@@ -216,35 +176,74 @@ void LogCore::consumeFifoEntries()
         auto block = m_messageFifo.wait();
         BlockConsumer consumer(m_messageFifo, block);
 
-        // Deserialize the header.
         auto stream = block.stream(m_messageFifo);
-        LogStatement stmt;
-        stream.read(&stmt, sizeof(LogStatement));
+
+        // Deserialize the header.
+        Directive directive;
+        if (!stream.read(&directive, 1))
+            continue;
 
         // Process control commands.
-        if (stmt.isControl)
+        if (directive.isCommand)
         {
-            auto command = static_cast<LogStatement::Command>(stmt.severity);
-            if (command == LogStatement::Command::Terminate)
+            auto command = static_cast<Directive::Command>(directive.severityOrCommand);
+            if (command == Directive::SetImmutableSpace)
+            {
+                stream.read(&m_serdesOptions.immutableStringBegin, sizeof(uintptr_t));
+                stream.read(&m_serdesOptions.immutableStringEnd, sizeof(uintptr_t));
+            }
+            if (command == Directive::SetBinarySink
+                    || command == Directive::SetBothSinks)
+            {
+                BinarySinkBase* sink;
+                if (stream.read(&sink, sizeof(BinarySinkBase*)))
+                    m_binarySink = sink;
+            }
+            if (command == Directive::SetTextSink
+                    || command == Directive::SetBothSinks)
+            {
+                TextSink* sink;
+                if (stream.read(&sink, sizeof(TextSink*)))
+                    m_textSink = sink;
+            }
+            // Signal that the cross-thread changes are done.
+            m_crossThreadChangeDone.notify(m_crossThreadChangeOngoing, false);
+
+            if (command == Directive::Terminate)
                 break;
-
-            continue;
+            else
+                continue;
         }
 
-        BinarySinkBase* binarySink = m_binarySink;
-        if (binarySink)
+        // Read the log record's header.
+        LogRecordData record;
+        record.severity = static_cast<Severity>(directive.severityOrCommand);
+        record.isTruncated = directive.isTruncated;
         {
-            binarySink->beginLogEntry(static_cast<Severity>(stmt.severity));
-            writeBinary(binarySink, stream);
-            binarySink->endLogEntry();
+            high_resolution_clock::duration::rep durationSinceEpoche;
+            if (!stream.read(&durationSinceEpoche, sizeof(durationSinceEpoche)))
+                continue;
+            record.time = high_resolution_clock::time_point(
+                    high_resolution_clock::duration(durationSinceEpoche));
         }
 
-        TextSink* textSink = m_textSink;
-        if (textSink)
+        // Write the entry to the binary sink.
+        if (m_binarySink)
         {
-            textSink->beginLogEntry(static_cast<Severity>(stmt.severity));
-            writeText(textSink, stream);
-            textSink->endLogEntry();
+            m_binarySink->beginLogEntry(record);
+            writeBinary(m_binarySink, stream);
+            m_binarySink->endLogEntry();
+        }
+
+        // Write the entry to the text sink.
+        if (m_textSink)
+        {
+            m_scratchPad.clear();
+            m_headerGenerator->generate(record, m_scratchPad);
+            m_textSink->beginLogEntry(record);
+            m_textSink->putString(m_scratchPad.data(), m_scratchPad.size());
+            writeText(m_textSink, stream);
+            m_textSink->endLogEntry();
         }
     }
 
@@ -259,7 +258,7 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
     if (!inStream.read(&format, sizeof(const char*)))
         return;
 
-    SplitString str{format, nullptr, strlen(format), 0};
+    SplitStringView str{format, strlen(format), nullptr, 0};
 
     TextStream outStream(*sink);
     unsigned argCounter = 0;
@@ -285,6 +284,7 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
         if (iter != marker)
             sink->putString(marker, iter - marker);
 
+        m_scratchPad.clear();
         // Loop to the end of the format specifier (or the end of the string).
         marker = iter + 1;
         while (*iter != '}')
@@ -309,7 +309,7 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
 
         if (m_scratchPad.size())
         {
-            m_scratchPad.push('0');
+            m_scratchPad.push('\0');
             outStream.parseFormatString(m_scratchPad.data());
         }
 
@@ -319,7 +319,7 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
 
 
         log11_detail::SerdesBase* serdes;
-        if (inStream.read(&serdes, sizeof(void*)))
+        if (inStream.read(&serdes, sizeof(void*)) && serdes)
         {
             serdes->deserialize(inStream, outStream);
         }
@@ -339,18 +339,16 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
 
 void LogCore::writeBinary(BinarySinkBase* sink, RingBuffer::Stream inStream)
 {
+    BinaryStream outStream(*sink, m_serdesOptions);
     const char* format;
     if (!inStream.read(&format, sizeof(const char*)))
         return;
+    outStream << format;
 
-    SplitString str{format, nullptr, strlen(format), 0};
-
-    BinaryStream outStream(*sink);
-    outStream << str;
     for (;;)
     {
         log11_detail::SerdesBase* serdes;
-        if (!inStream.read(&serdes, sizeof(void*)))
+        if (!inStream.read(&serdes, sizeof(void*)) || !serdes)
             break;
         serdes->deserialize(inStream, outStream);
     }

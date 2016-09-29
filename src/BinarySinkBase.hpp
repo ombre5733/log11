@@ -27,17 +27,21 @@
 #ifndef LOG11_BINARYSINKBASE_HPP
 #define LOG11_BINARYSINKBASE_HPP
 
+#include "LogRecordData.hpp"
 #include "Severity.hpp"
 #include "String.hpp"
 #include "Utility.hpp"
 
+#include <chrono>
 #include <cstddef>
 
 
 namespace log11
 {
 
-//! The base class for all binary logger sinks.
+//! \brief The base class for all binary logger sinks.
+//!
+//! The BinarySinkBase is the base class for all binary logger sinks.
 class BinarySinkBase
 {
 public:
@@ -52,7 +56,7 @@ public:
 
     //! Called when a new log entry starts.
     virtual
-    void beginLogEntry(Severity severity) = 0;
+    void beginLogEntry(const LogRecordData& data) = 0;
 
     //! Called when a log entry ends.
     virtual
@@ -118,10 +122,19 @@ public:
 
 
     virtual
-    void write(Immutable<const char*> str) = 0;
+    void write(Immutable<const char*> str,
+               std::uintptr_t immutableStringSpaceBegin) = 0;
 
     virtual
-    void write(const log11_detail::SplitString& str) = 0;
+    void write(const SplitStringView& str) = 0;
+
+
+
+    virtual
+    void beginStruct(std::uint32_t tag) = 0;
+
+    virtual
+    void endStruct(std::uint32_t tag) = 0;
 };
 
 } // namespace log11

@@ -27,18 +27,14 @@
 #ifndef LOG11_RINGBUFFER_HPP
 #define LOG11_RINGBUFFER_HPP
 
-#include "_config.hpp"
 #include "String.hpp"
+#include "Synchronic.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <utility>
 
-#ifdef LOG11_USE_WEOS
-#include <weos/synchronic.hpp>
-#else
-#include "_synchronic.hpp"
-#endif // LOG11_USE_WEOS
 
 namespace log11
 {
@@ -46,18 +42,46 @@ namespace log11
 class RingBuffer
 {
 public:
+    using byte = std::uint8_t;
+
     class Stream
     {
     public:
         Stream(RingBuffer& buffer, unsigned begin, unsigned length) noexcept;
 
+        byte peek() noexcept;
+
         bool read(void* dest, unsigned size) noexcept;
 
         bool write(const void* source, unsigned size) noexcept;
 
-        bool readString(log11_detail::SplitString& view, unsigned size) noexcept;
+        bool readString(SplitStringView& view, unsigned size) noexcept;
 
         bool writeString(const void* source, unsigned size) noexcept;
+
+        template <typename T>
+        std::enable_if_t<(sizeof(T) > 1), bool> write(T value) noexcept
+        {
+            return write(&value, sizeof(T));
+        }
+
+        template <typename T>
+        std::enable_if_t<sizeof(T) == 1, bool> write(T data) noexcept
+        {
+            if (m_length)
+            {
+                *static_cast<T*>(m_buffer.data(m_begin)) = data;
+                ++m_begin;
+                --m_length;
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        void zeroFill() noexcept;
 
     private:
         RingBuffer& m_buffer;
@@ -107,9 +131,12 @@ public:
 
 
 
-    //! Creates a ring buffer whose size is <tt>2^exponent</tt>.
+    //! \brief Creates a ring buffer.
+    //!
+    //! Creates a ring buffer with the given byte \p size. The size is rounded
+    //! up to the next power of 2.
     explicit
-    RingBuffer(unsigned exponent);
+    RingBuffer(unsigned size);
 
     //! Destroys the ring buffer.
     ~RingBuffer();
@@ -155,7 +182,9 @@ public:
 
     void write(unsigned begin, const void* source, unsigned size) noexcept;
 
-    void unwrap(unsigned begin, log11_detail::SplitString& view, unsigned size) const noexcept;
+    void unwrap(unsigned begin, SplitStringView& view, unsigned size) const noexcept;
+
+    unsigned size() const noexcept;
 
 private:
     //! The ring buffer's data.
@@ -175,14 +204,10 @@ private:
     //! The number of stashed ranges.
     std::atomic<unsigned> m_stashCount;
 
-#if defined(LOG11_USE_WEOS) && !defined(FREM_GEN_RUN)
-    using synchronic = weos::synchronic<unsigned>;
-#else
-    using synchronic = log11_detail::synchronic<unsigned>;
-#endif
-
-    mutable synchronic m_consumerProgress;
-    mutable synchronic m_producerProgress;
+    //! Used to signal progress in the consumer.
+    mutable log11_detail::synchronic<unsigned> m_consumerProgress;
+    //! Used to signal progress in the producers.
+    mutable log11_detail::synchronic<unsigned> m_producerProgress;
 
 
     bool applyStash() noexcept;

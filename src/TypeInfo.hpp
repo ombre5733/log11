@@ -24,25 +24,20 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#include "TextSink.hpp"
-
-using namespace log11;
-
-
-TextSink::~TextSink()
+namespace log11
 {
-}
 
-void TextSink::beginLogEntry(const LogRecordData& /*data*/)
-{
-}
+template <typename T>
+struct TypeInfo;
 
-void TextSink::endLogEntry()
-{
-}
+//! The first tag, which can be used for a user-defined type.
+//! All user defined tags must be in the range
+//! <tt>user_defined_type_tag_begin <= tag < user_defined_type_tag_end</tt>.
+static constexpr unsigned user_defined_type_tag_begin = 1024;
 
-void TextSink::putString(const char* text, std::size_t size)
-{
-    while (size--)
-        putChar(*text++);
-}
+//! The last tag, which cannot be used for a user-defined type anymore.
+//! All user defined tags must be in the range
+//! <tt>user_defined_type_tag_begin <= tag < user_defined_type_tag_end</tt>.
+static constexpr unsigned user_defined_type_tag_end = 4096;
+
+} // namespace log11

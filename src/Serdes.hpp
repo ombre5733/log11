@@ -45,12 +45,7 @@ namespace log11_detail
 
 struct SerdesOptions
 {
-    bool isImmutable(const char* str) const noexcept
-    {
-        using namespace std;
-        return uintptr_t(str) < immutableStringEnd
-               && uintptr_t(str) >= immutableStringBegin;
-    }
+    bool isImmutable(const char* str) const noexcept;
 
     std::uintptr_t immutableStringBegin{0};
     std::uintptr_t immutableStringEnd{0};
@@ -110,7 +105,7 @@ public:
         T temp;
         if (inStream.read(&temp, sizeof(T)))
         {
-            outStream.doWrite(std::move(temp), log11_detail::is_custom<T>());
+            outStream << std::move(temp);
             return true;
         }
         else
@@ -126,7 +121,7 @@ public:
         T temp;
         if (inStream.read(&temp, sizeof(T)))
         {
-            outStream.doPrint(std::move(temp), log11_detail::is_custom<T>());
+            outStream.doPrint(std::move(temp), log11_detail::is_builtin<T>());
             return true;
         }
         else
@@ -176,28 +171,33 @@ public:
                      TextStream& outStream) const noexcept override;
 };
 
+// ----=====================================================================----
+// The SerdesSelector is a utility for mapping types to the corresponding
+// serdes.
+// - All pointer types are mapped to Serdes<const void*>
+
 template <typename T>
 struct SerdesSelector
 {
     using type = Serdes<T>;
 };
 
-template <typename U>
-struct SerdesStarSelector
+template <typename TPointee>
+struct PointerSerdesSelector
 {
     using type = Serdes<const void*>;
 };
 
 template <>
-struct SerdesStarSelector<char>
+struct PointerSerdesSelector<char>
 {
-    using type = MutableCharStarSerdes;
+    using type = CharStarSerdes;
 };
 
 // Fold the serializers for pointer into void* serializers
 // (except for C-strings).
 template <typename T>
-struct SerdesSelector<T*> : public SerdesStarSelector<std::remove_cv_t<T>>
+struct SerdesSelector<T*> : public PointerSerdesSelector<std::remove_cv_t<T>>
 {
 };
 

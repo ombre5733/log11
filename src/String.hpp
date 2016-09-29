@@ -24,8 +24,8 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_SPLITSTRING_HPP
-#define LOG11_SPLITSTRING_HPP
+#ifndef LOG11_STRING_HPP
+#define LOG11_STRING_HPP
 
 #include <cstddef>
 #include <type_traits>
@@ -75,18 +75,14 @@ private:
 };
 #endif
 
-namespace log11_detail
-{
-
-struct SplitString
+struct SplitStringView
 {
     const char* begin1;
+    std::size_t length1;
     const char* begin2;
-    unsigned length1;
-    unsigned length2;
+    std::size_t length2;
 };
 
-} // namespace log11_detail
 } // namespace log11
 
-#endif // LOG11_SPLITSTRING_HPP
+#endif // LOG11_STRING_HPP

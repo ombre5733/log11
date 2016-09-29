@@ -25,6 +25,9 @@
 *******************************************************************************/
 
 #include "BinaryStream.hpp"
+#include "Serdes.hpp"
+
+#include <cstring>
 
 using namespace std;
 
@@ -36,8 +39,9 @@ namespace log11
 //     BinaryStream
 // ----=====================================================================----
 
-BinaryStream::BinaryStream(BinarySinkBase& sink)
+BinaryStream::BinaryStream(BinarySinkBase& sink, log11_detail::SerdesOptions& opt)
     : m_sink(&sink)
+    , m_options(opt)
 {
 }
 
@@ -159,18 +163,20 @@ BinaryStream& BinaryStream::operator<<(const void* value)
 
 BinaryStream& BinaryStream::operator<<(const char* str)
 {
-    // TODO: Must do some dispatching here!! According to serdes options!!
-    m_sink->write(str);
+    if (m_options.isImmutable(str))
+        m_sink->write(Immutable<const char*>(str), m_options.immutableStringBegin);
+    else
+        m_sink->write(SplitStringView{str, str ? strlen(str) : 0, nullptr, 0});
     return *this;
 }
 
 BinaryStream& BinaryStream::operator<<(Immutable<const char*> str)
 {
-    m_sink->write(str);
+    m_sink->write(str, m_options.immutableStringBegin);
     return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(const log11_detail::SplitString& str)
+BinaryStream& BinaryStream::operator<<(const SplitStringView& str)
 {
     m_sink->write(str);
     return *this;

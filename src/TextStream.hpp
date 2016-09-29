@@ -27,7 +27,7 @@
 #ifndef LOG11_TEXTSTREAM_HPP
 #define LOG11_TEXTSTREAM_HPP
 
-#include "_config.hpp"
+#include "Config.hpp"
 #include "TextSink.hpp"
 #include "Utility.hpp"
 
@@ -42,13 +42,14 @@
 
 namespace log11
 {
-
+class SplitStringView;
 class TextStream;
+
+template <typename T>
+struct TypeInfo;
 
 namespace log11_detail
 {
-
-class SplitString;
 
 template <typename T>
 class Serdes;
@@ -56,74 +57,89 @@ class Serdes;
 
 
 template <typename T>
-struct has_member_print
+struct NoTextStreamOutputFunctionDefined;
+
+template <typename T>
+struct try_textstream_shift_operator
 {
     template <typename U>
-    static constexpr auto test(U*) -> decltype(std::declval<U&>().print(std::declval<log11::TextStream&>()), std::true_type());
+    static constexpr auto test(U*)
+        -> decltype(std::declval<log11::TextStream&>() << std::declval<U&>(), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using type = decltype(test<T>(0));
+    using can_call = decltype(test<T>(0));
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, can_call)
+    {
+        stream << std::move(value);
+    }
+
+    template <typename U>
+    static
+    void f(log11::TextStream&, U&&, not_t<can_call>)
+    {
+        NoTextStreamOutputFunctionDefined<T> dummy;
+        (void)dummy;
+    }
 };
 
 template <typename T>
-struct has_free_print : std::false_type
+struct try_free_textstream_write
 {
     template <typename U>
-    static constexpr auto test(U*) -> decltype(print(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
+    static constexpr auto test(U*)
+        -> decltype(write(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using type = decltype(test<T>(0));
+    using can_call = decltype(test<T>(0));
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, can_call)
+    {
+        write(stream, std::move(value));
+    }
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, not_t<can_call>)
+    {
+        try_textstream_shift_operator<T>::f(stream, std::move(value), std::true_type());
+    }
 };
 
 template <typename T>
-struct has_textstream_shift_operator : std::false_type
+struct try_member_textstream_write
 {
     template <typename U>
-    static constexpr auto test(U*) -> decltype(std::declval<log11::TextStream&>() << std::declval<U&>(), std::true_type());
+    static constexpr auto test(U*)
+        -> decltype(std::declval<U&>().write(std::declval<log11::TextStream&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using type = decltype(test<T>(0));
+    using can_call = decltype(test<T>(0));
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, can_call)
+    {
+        std::move(value).write(stream);
+    }
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, not_t<can_call>)
+    {
+        try_free_textstream_write<T>::f(stream, std::move(value), std::true_type());
+    }
 };
-
-template <typename T>
-struct NoPrintFunctionDefined;
-
-
-
-template <typename T, typename U, typename V>
-void selectCustomPrint(log11::TextStream& stream, T&& value,
-                       std::true_type, U, V)
-{
-    std::move(value).print(stream);
-}
-
-template <typename T, typename U>
-void selectCustomPrint(log11::TextStream& stream, T&& value,
-                       std::false_type, std::true_type, U)
-{
-    print(stream, std::move(value));
-}
-
-template <typename T>
-void selectCustomPrint(log11::TextStream& stream, T&& value,
-                       std::false_type, std::false_type, std::true_type)
-{
-    stream << std::move(value);
-}
-
-template <typename T>
-void selectCustomPrint(log11::TextStream& stream, T&&,
-                       std::false_type, std::false_type, std::false_type)
-{
-    log11_detail::NoPrintFunctionDefined<T> dummy;
-    (void)dummy;
-}
 
 
 
@@ -185,11 +201,10 @@ public:
     TextStream& operator<<(const void* value);
 
     TextStream& operator<<(const char* str);
-    TextStream& operator<<(Immutable<const char*> str);
-    TextStream& operator<<(const log11_detail::SplitString& str);
+    TextStream& operator<<(const SplitStringView& str);
 
     template <typename... TArgs>
-    TextStream& print(const char* fmt, TArgs&&... args);
+    TextStream& write(const char* fmt, TArgs&&... args);
 
     const char* parseFormatString(const char* str)
     {
@@ -268,24 +283,21 @@ private:
 
 
     template <typename T>
-    void doPrint(T value, std::false_type)
+    void doPrint(T value, /* is_builtin = */ std::true_type)
     {
         *this << value;
     }
 
     template <typename T>
-    void doPrint(T&& value, std::true_type)
+    void doPrint(T&& value, /* is_builtin = */ std::false_type)
     {
         // TODO: padding
 
         // TODO: If this->m_format.align != left, we have to use a buffered sink
         log11_detail::TextForwarderSink sink(*this);
         TextStream chainedStream(sink);
-        log11_detail::selectCustomPrint(
-                    chainedStream, std::move(value),
-                    typename log11_detail::has_member_print<T>::type(),
-                    typename log11_detail::has_free_print<T>::type(),
-                    typename log11_detail::has_textstream_shift_operator<T>::type());
+        log11_detail::try_member_textstream_write<T>::f(
+            chainedStream, std::move(value), std::true_type());
     }
 
     void printArgument(unsigned index);
@@ -314,7 +326,7 @@ private:
 };
 
 template <typename... TArgs>
-TextStream& TextStream::print(const char* fmt, TArgs&&... args)
+TextStream& TextStream::write(const char* fmt, TArgs&&... args)
 {
     unsigned argCounter = 0;
     const char* marker = fmt;
@@ -355,7 +367,7 @@ template <typename TArg, typename... TArgs>
 void TextStream::printArgument(unsigned index, TArg&& arg, TArgs&&... args)
 {
     if (index == 0)
-        doPrint(std::move(arg), log11_detail::is_custom<TArg>());
+        doPrint(std::move(arg), log11_detail::is_builtin<TArg>());
     else
         printArgument(index - 1, std::move(args)...);
 }

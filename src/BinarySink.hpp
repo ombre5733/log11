@@ -41,7 +41,7 @@ class BinarySink : public BinarySinkBase
 public:
     enum class TypeTag
     {
-        False,
+        False = 1,
         True,
 
         Char,
@@ -71,20 +71,12 @@ public:
         Pointer,
 
         String,
-        StringView,
         StringPointer,
+        StringView,
 
-        CustomTypeEnd
+        EndOfStruct
     };
 
-
-    //! Called when a new log entry starts.
-    virtual
-    void beginLogEntry(Severity severity);
-
-    //! Called when a log entry ends.
-    virtual
-    void endLogEntry();
 
     virtual
     void writeByte(byte data) = 0;
@@ -142,11 +134,17 @@ protected:
     void write(const void* value) override;
 
     virtual
-    void write(Immutable<const char*> str) override;
+    void write(Immutable<const char*> str,
+               std::uintptr_t immutableStringSpaceBegin) override;
 
     virtual
-    void write(const log11_detail::SplitString& str) override;
+    void write(const SplitStringView& str) override;
 
+    virtual
+    void beginStruct(std::uint32_t tag);
+
+    virtual
+    void endStruct(std::uint32_t tag);
 
 
 

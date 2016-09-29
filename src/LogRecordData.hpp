@@ -24,65 +24,24 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_SYNCHRONIC_HPP
-#define LOG11_SYNCHRONIC_HPP
+#ifndef LOG11_LOGRECORDDATA_HPP
+#define LOG11_LOGRECORDDATA_HPP
 
-#include <condition_variable>
-#include <mutex>
+#include "Severity.hpp"
+
+#include <chrono>
+
 
 namespace log11
 {
-namespace log11_detail
+
+struct LogRecordData
 {
-
-template <typename T>
-class synchronic
-{
-public:
-    using atomic_type = std::atomic<T>;
-
-    synchronic() = default;
-    ~synchronic() = default;
-
-    synchronic(const synchronic&) = delete;
-    synchronic& operator=(const synchronic&) = delete;
-
-    void notify(atomic_type& object, T value) noexcept
-    {
-        m_mutex.lock();
-        object.store(value);
-        m_mutex.unlock();
-        m_cv.notify_all();
-    }
-
-    template <typename F>
-    void notify(atomic_type& /*object*/, F&& func)
-    {
-        m_mutex.lock();
-        func();
-        m_mutex.unlock();
-        m_cv.notify_all();
-    }
-
-    void expect(const atomic_type& object, T desired) const noexcept
-    {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [&] { return object.load() == desired; } );
-    }
-
-    template <typename F>
-    void expect(const atomic_type& /*object*/, F&& pred) const
-    {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, std::forward<F>(pred));
-    }
-
-private:
-    mutable std::mutex m_mutex;
-    mutable std::condition_variable m_cv;
+    std::chrono::high_resolution_clock::time_point time;
+    Severity severity;
+    bool isTruncated;
 };
 
-} // log11_detail
 } // namespace log11
 
-#endif // LOG11_SYNCHRONIC_HPP
+#endif // LOG11_LOGRECORDDATA_HPP

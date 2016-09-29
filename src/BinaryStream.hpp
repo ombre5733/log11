@@ -27,7 +27,7 @@
 #ifndef LOG11_BINARYSTREAM_HPP
 #define LOG11_BINARYSTREAM_HPP
 
-#include "_config.hpp"
+#include "Config.hpp"
 #include "BinarySink.hpp"
 #include "Utility.hpp"
 
@@ -42,11 +42,86 @@
 
 namespace log11
 {
+class BinaryStream;
+class SplitStringView;
+
+template <typename T>
+struct TypeInfo;
+
 namespace log11_detail
 {
+class SerdesOptions;
 
 template <typename T>
 class Serdes;
+
+
+
+template <typename T>
+struct NoTypeTagGetterDefined;
+
+template <typename T>
+struct try_get_tagid_from_typeinfo
+{
+    template <typename U>
+    static constexpr auto test(U*)
+        -> decltype(log11::TypeInfo<U>::tag(), std::true_type());
+
+    template <typename U>
+    static constexpr std::false_type test(...);
+
+    using can_call = decltype(test<T>(0));
+
+    template <typename U>
+    static
+    std::uint32_t get(can_call)
+    {
+        return log11::TypeInfo<T>::tag();
+    }
+
+    template <typename U>
+    static
+    std::uint32_t get(not_t<can_call>)
+    {
+        NoTypeTagGetterDefined<T> dummy;
+        ((void)dummy);
+        return 0;
+    }
+};
+
+//! This dummy class has no implementation. It is used to signal that a
+//! user-defined type lacks a proper stream output function because
+//! log11::TypeInfo<T> is undefined.
+template <typename T>
+struct NoBinaryStreamOutputFunctionDefined;
+
+template <typename T>
+struct try_typeinfo_binarystream_write
+{
+    template <typename U>
+    static constexpr auto test(U*)
+        -> decltype(log11::TypeInfo<U>::write(std::declval<log11::BinaryStream&>(), std::declval<U&>()), std::true_type());
+
+    template <typename U>
+    static constexpr std::false_type test(...);
+
+    using can_call = decltype(test<T>(0));
+
+    template <typename U>
+    static
+    void f(log11::BinaryStream& stream, U&& value, can_call)
+    {
+        log11::TypeInfo<T>::write(stream, value);
+    }
+
+    template <typename U>
+    static
+    void f(log11::BinaryStream&, U&&, not_t<can_call>)
+    {
+        NoBinaryStreamOutputFunctionDefined<T> dummy;
+        (void)dummy;
+    }
+};
 
 } // namespace log11_detail
 
@@ -54,7 +129,7 @@ class BinaryStream
 {
 public:
     explicit
-    BinaryStream(BinarySinkBase& sink);
+    BinaryStream(BinarySinkBase& sink, log11_detail::SerdesOptions& opt);
 
     BinaryStream(const BinaryStream&) = delete;
     BinaryStream& operator=(const BinaryStream&) = delete;
@@ -85,41 +160,36 @@ public:
 
     BinaryStream& operator<<(const char* str);
     BinaryStream& operator<<(Immutable<const char*> str);
-    BinaryStream& operator<<(const log11_detail::SplitString& str);
+    BinaryStream& operator<<(const SplitStringView& str);
 
-    void beginStruct(std::uint32_t id);
-    void endStruct(std::uint32_t id);
+    template <typename T,
+              typename = std::enable_if_t<!log11_detail::is_builtin<T>::value>>
+    BinaryStream& operator<<(T&& value);
 
-    void writeSignedEnum(std::uint32_t id, long long value);
-    void writeUnsignedEnum(std::uint32_t id, unsigned long long value);
+    void writeSignedEnum(std::uint32_t tag, long long value);
+    void writeUnsignedEnum(std::uint32_t tag, unsigned long long value);
 
 private:
     BinarySinkBase* m_sink;
-
-
-    template <typename T>
-    void doWrite(T value, std::false_type)
-    {
-        *this << value;
-    }
-
-    template <typename T>
-    void doWrite(T&& value, std::true_type)
-    {
-        // TODO
-        //log11_detail::TextForwarderSink sink(*this);
-        //TextStream chainedStream(sink);
-        //log11_detail::selectCustomWrite(
-        //            chainedStream, std::move(value),
-        //            typename log11_detail::has_member_write<T>::type(),
-        //            typename log11_detail::has_free_write<T>::type(),
-        //            typename log11_detail::has_binarystream_shift_operator<T>::type());
-    }
+    log11_detail::SerdesOptions& m_options;
 
 
     template <typename T>
     friend class log11_detail::Serdes;
 };
+
+template <typename T, typename>
+BinaryStream& BinaryStream::operator<<(T&& value)
+{
+    std::uint32_t tag = log11_detail::try_get_tagid_from_typeinfo<
+            std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
+    m_sink->beginStruct(tag);
+    log11_detail::try_typeinfo_binarystream_write<std::decay_t<T>>::f(
+        *this, value, std::true_type());
+    m_sink->endStruct(tag);
+
+    return *this;
+}
 
 } // namespace log11
 

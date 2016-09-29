@@ -32,15 +32,86 @@
 
 namespace log11
 {
+class LogRecordData;
+class SplitStringView;
 
+template <typename T>
+class Format;
+
+template <typename T>
+class Immutable;
+
+
+
+namespace log11_detail
+{
+template <typename T>
+struct is_format : std::false_type
+{
+};
+
+template <typename T>
+struct is_format<Format<T>> : std::true_type
+{
+};
+
+template <typename T>
+struct is_immutable : std::false_type
+{
+};
+
+template <typename T>
+struct is_immutable<Immutable<T>> : std::true_type
+{
+};
+
+} // namespace log11_detail
+
+
+
+//! Marks a string as immutable.
 template <typename T>
 class Immutable
 {
 public:
+    static_assert(!log11_detail::is_immutable<T>::value, "");
+
     Immutable() = default;
 
     constexpr explicit
-    Immutable(T v)
+    Immutable(T v) noexcept
+        : m_value(v)
+    {
+    }
+
+    constexpr
+    const char* get() const noexcept
+    {
+        return m_value;
+    }
+
+    constexpr explicit
+    operator T() const noexcept
+    {
+        return m_value;
+    }
+
+private:
+    T m_value;
+};
+
+//! Marks a string as format string.
+template <typename T>
+class Format
+{
+public:
+    static_assert(!log11_detail::is_format<T>::value, "");
+    static_assert(!log11_detail::is_immutable<T>::value, "");
+
+    Format() = default;
+
+    constexpr explicit
+    Format(T v)
         : m_value(v)
     {
     }
@@ -95,15 +166,83 @@ using builtin_types = TypeList<bool,
                                unsigned long long,
                                float,
                                double,
-                               long double//,
-                               >;//StringRef>;
+                               long double,
+                               SplitStringView>;
 
 template <typename T>
-struct is_custom : std::integral_constant<
-                       bool,
-                       !is_member<std::decay_t<T>, builtin_types>::value
-                       && !std::is_pointer<T>::value>
+struct is_builtin : std::integral_constant<
+                        bool,
+                        is_member<std::decay_t<T>, builtin_types>::value
+                        || std::is_pointer<T>::value>
 {
+};
+
+
+
+template <typename T>
+struct NotType;
+
+template <bool B>
+struct NotType<std::integral_constant<bool, B>>
+{
+    using type = std::integral_constant<bool, !B>;
+};
+
+template <typename T>
+using not_t = typename NotType<T>::type;
+
+
+
+//! A scratch pad.
+class ScratchPad
+{
+public:
+    ScratchPad(unsigned capacity);
+    ~ScratchPad();
+
+    ScratchPad(const ScratchPad&) = delete;
+    ScratchPad& operator=(const ScratchPad&) = delete;
+
+    void reserve(unsigned capacity, bool keepContent);
+
+    void clear() noexcept;
+
+    void push(char ch);
+    void push(const char* data, unsigned size);
+
+    const char* data() const noexcept;
+    unsigned size() const noexcept;
+
+private:
+    char* m_data;
+    unsigned m_capacity;
+    unsigned m_size;
+};
+
+
+
+//! A generator for the header of a log record.
+class RecordHeaderGenerator
+{
+public:
+    explicit
+    RecordHeaderGenerator();
+
+    virtual
+    ~RecordHeaderGenerator();
+
+    RecordHeaderGenerator(const RecordHeaderGenerator&) = delete;
+    RecordHeaderGenerator& operator=(const RecordHeaderGenerator&) = delete;
+
+    void generate(LogRecordData& record, log11_detail::ScratchPad& pad);
+
+    virtual
+    void append(LogRecordData& record, log11_detail::ScratchPad& pad) = 0;
+
+    static
+    RecordHeaderGenerator* parse(const char* str);
+
+    RecordHeaderGenerator* m_next;
 };
 
 } // namespace log11_detail

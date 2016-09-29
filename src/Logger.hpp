@@ -27,150 +27,33 @@
 #ifndef LOG11_LOGGER_HPP
 #define LOG11_LOGGER_HPP
 
-#include "_config.hpp"
-#include "RingBuffer.hpp"
-#include "SerDes.hpp"
+#include "Config.hpp"
+#include "LogCore.hpp"
 #include "Severity.hpp"
-
-#ifdef LOG11_USE_WEOS
-#include <weos/thread.hpp>
-#include <weos/utility.hpp>
-#endif // LOG11_USE_WEOS
-
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <cstddef>
-#include <cstdint>
-#include <new>
-#include <type_traits>
-#include <utility>
 
 
 namespace log11
 {
 
-class Logger;
-class Sink;
-
-namespace log11_detail
-{
-
-struct LogStatement
-{
-    LogStatement(Severity severity, const char* msg);
-
-    LogStatement(const LogStatement&) = delete;
-    LogStatement& operator=(const LogStatement&) = delete;
-
-    std::int64_t m_timeStamp;
-    const char* m_message;
-    unsigned m_extensionSize : 16;
-    unsigned m_extensionType : 2;
-    unsigned m_severity : 4;
-};
-
-template <typename... T>
-class LogStreamStatement;
-
-template <>
-class LogStreamStatement<>
-{
-public:
-    LogStreamStatement(Logger* logger, Severity severity)
-        : m_logger(logger),
-          m_severity(static_cast<int>(severity))
-    {
-    }
-
-    template <typename TArg>
-    LogStreamStatement<typename std::decay<TArg>::type>
-    operator<<(TArg&& arg)
-    {
-        using namespace std;
-        return LogStreamStatement<typename decay<TArg>::type>(
-                    *this, forward<TArg>(arg));
-    }
-
-private:
-    Logger* m_logger;
-    unsigned m_severity : 4;
-
-    template <typename... U>
-    friend class LogStreamStatement;
-};
-
-template <typename... T>
-class LogStreamStatement
-{
-public:
-    ~LogStreamStatement();
-
-    template <typename TArg>
-    LogStreamStatement<T..., typename std::decay<TArg>::type>
-    operator<<(TArg&& arg)
-    {
-        using namespace std;
-        m_active = false;
-        return LogStreamStatement<T..., typename decay<TArg>::type>(
-                    *this, forward<TArg>(arg),
-                    make_integer_sequence<int, sizeof...(T)>());
-    }
-
-private:
-    std::tuple<T...> m_data;
-    Logger* m_logger;
-    unsigned m_severity : 4;
-    unsigned m_active : 1;
-
-
-    template <typename T2>
-    LogStreamStatement(const LogStreamStatement<>& stmt, T2&& tail)
-        : m_data(tail),
-          m_logger(stmt.m_logger),
-          m_severity(stmt.m_severity),
-          m_active(true)
-    {
-    }
-
-    template <typename... T1, typename T2, int... TI>
-    LogStreamStatement(const LogStreamStatement<T1...>& stmt,
-                       T2&& tail,
-                       std::integer_sequence<int, TI...>)
-        : m_data(std::get<TI>(stmt.m_data)..., tail),
-          m_logger(stmt.m_logger),
-          m_severity(stmt.m_severity),
-          m_active(true)
-    {
-    }
-
-    template <typename... U>
-    friend class LogStreamStatement;
-};
-
-} // namespace log11_detail
-
-
 //! A tag type for log entries which may be discarded.
 struct may_discard_t {};
 //! A tag type for log entries which may be truncated.
-struct may_truncate_t {};
+struct may_truncate_or_discard_t {};
 
 //! This tag specifies that a log entry may be discarded if the FIFO is full.
+//! The message will either be logged as a whole or discarded.
 constexpr may_discard_t may_discard = may_discard_t();
-//! This tag specifies that a log entry may be truncated (or even discarded)
-//! if there is no sufficient space in the FIFO.
-constexpr may_truncate_t may_truncate = may_truncate_t();
 
+//! This tag specifies that a log entry may be truncated or discarded
+//! if there is no sufficient space in the FIFO.
+constexpr may_truncate_or_discard_t may_truncate_or_discard = may_truncate_or_discard_t();
+
+
+//! \brief A logger.
+//!
+//! The Logger is the front-end of the logging facility.
 class Logger
 {
-    enum ClaimPolicy
-    {
-        Block,    //!< Block caller until sufficient space is available
-        Truncate, //!< Message will be truncated or even discarded
-        Discard   //!< Message is displayed fully or discarded
-    };
-
 public:
 #ifdef LOG11_USE_WEOS
     explicit
@@ -180,59 +63,78 @@ public:
     Logger(std::size_t bufferSizeExponent);
 #endif // LOG11_USE_WEOS
 
+    //! Creates a new logger which attaches to a given core.
+    explicit
+    Logger(LogCore* core);
+
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
     //! Destroys the logger.
     ~Logger();
 
-    //! Sets the \p severity filter.
-    void setSeverityThreshold(Severity severity) noexcept;
+    //! \brief Sets the logging level.
+    //!
+    //! Sets the logging level to the given \p threshold. Log messages with
+    //! a severity lower than the threshold are discarded.
+    void setLevel(Severity threshold) noexcept;
 
-    //! If \p enable is set, a new-line is automatically appended to every
-    //! log statement. This is enabled by default.
-    void setAutomaticNewLine(bool enable) noexcept;
-
-    //! Sets the logger's \p sink.
-    void setSink(Sink* sink) noexcept;
-
-    //! Logs the \p message interpolated with the \p args using the specified
-    //! \p severity level. The caller is blocked until there is sufficient
-    //! space in the buffer.
+    //! If the level of this logger is lower or equal to the \p severity of
+    //! the message, a new log entry is created by interpolating the
+    //! \p message with the given \p args.
+    //! The caller is blocked until there is sufficient space in the FIFO,
+    //! which connects the logger front-ends to the sinks.
     template <typename... TArgs>
     void log(Severity severity, const char* message, TArgs&&... args)
     {
-        doLog(Block, severity, message, std::forward<TArgs>(args)...);
+        if (severity >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, severity,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! Logs the \p message interpolated with the \p args using the specified
-    //! \p severity level. If the space in the buffer is too small, the
-    //! log entry is discarded but the caller is not blocked.
+    //! If the level of this logger is lower or equal to the \p severity of
+    //! the message, a new log entry is created by interpolating the
+    //! \p message with the given \p args.
+    //! If there is not sufficient space in the FIFO, which connects the logger
+    //! front-ends to the sinks, the entire message is discarded but the
+    //! caller is not blocked.
     template <typename... TArgs>
     void log(may_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        doLog(Discard, severity, message, std::forward<TArgs>(args)...);
+        if (severity >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Discard, severity,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! Logs the \p message interpolated with the \p args using the specified
-    //! \p severity level. If the space in the buffer is too small, the
-    //! log entry is truncated (or even discarded if no space is left at all)
-    //! but the caller is not blocked.
+    //! If the level of this logger is lower or equal to the \p severity of
+    //! the message, a new log entry is created by interpolating the
+    //! \p message with the given \p args.
+    //! If there is not sufficient space in the FIFO, which connects the logger
+    //! front-ends to the sinks, the message may be either truncated or even
+    //! discarded but the caller is not blocked.
     template <typename... TArgs>
-    void log(may_truncate_t, Severity severity, const char* message,
+    void log(may_truncate_or_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        doLog(Truncate, severity, message, std::forward<TArgs>(args)...);
+        if (severity >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Truncate, severity,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! Creates a log stream with the given \p severity. The resulting object
-    //! can be used to create a log entry using C++ stream notation as in
-    //! \code
-    //! log(Severity::Error) << "The input" << someVar << "is too large";
-    //! log(Severity::Debug) << "a:" << a << "b:" << b << "sum:" << a + b;
-    //! \endcode
-    log11_detail::LogStreamStatement<> log(Severity severity);
+    // //! Creates a log stream with the given \p severity. The resulting object
+    // //! can be used to create a log entry using C++ stream notation as in
+    // //! \code
+    // //! log(Severity::Error) << "The input" << someVar << "is too large";
+    // //! log(Severity::Debug) << "a:" << a << "b:" << b << "sum:" << a + b;
+    // //! \endcode
+    // log11_detail::LogStreamStatement<> log(Severity severity);
 
     // trace()
 
@@ -245,7 +147,11 @@ public:
     template <typename... TArgs>
     void trace(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Trace, message, std::forward<TArgs>(args)...);
+        if (Severity::Trace >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, Severity::Trace,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for trace log entries.
@@ -257,31 +163,39 @@ public:
     template <typename... TArgs>
     void trace(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Trace, message, std::forward<TArgs>(args)...);
+        if (Severity::Trace >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Trace,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for trace log entries.
     //!
     //! This function is equivalent to calling
     //! \code
-    //! log(may_truncate, Severity::Trace, message, args...);
+    //! log(may_truncate_or_discard, Severity::Trace, message, args...);
     //! \endcode
     template <typename... TArgs>
-    void trace(may_truncate_t, const char* message, TArgs&&... args)
+    void trace(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Trace, message, std::forward<TArgs>(args)...);
+        if (Severity::Trace >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Trace,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! \brief A convenience function for trace streams.
-    //!
-    //! Creates a trace stream equivalent to
-    //! \code
-    //! log(Severity::Trace)
-    //! \endcode
-    log11_detail::LogStreamStatement<> trace()
-    {
-        return log(Severity::Trace);
-    }
+    // //! \brief A convenience function for trace streams.
+    // //!
+    // //! Creates a trace stream equivalent to
+    // //! \code
+    // //! log(Severity::Trace)
+    // //! \endcode
+    // log11_detail::LogStreamStatement<> trace()
+    // {
+    //     return log(Severity::Trace);
+    // }
 
     // debug()
 
@@ -294,7 +208,11 @@ public:
     template <typename... TArgs>
     void debug(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Debug, message, std::forward<TArgs>(args)...);
+        if (Severity::Debug >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, Severity::Debug,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for debug log entries.
@@ -306,31 +224,39 @@ public:
     template <typename... TArgs>
     void debug(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Debug, message, std::forward<TArgs>(args)...);
+        if (Severity::Debug >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Debug,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for debug log entries.
     //!
     //! This function is equivalent to calling
     //! \code
-    //! log(may_truncate, Severity::Debug, message, args...);
+    //! log(may_truncate_or_discard, Severity::Debug, message, args...);
     //! \endcode
     template <typename... TArgs>
-    void debug(may_truncate_t, const char* message, TArgs&&... args)
+    void debug(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Debug, message, std::forward<TArgs>(args)...);
+        if (Severity::Debug >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Debug,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! \brief A convenience function for debug streams.
-    //!
-    //! Creates a debug stream equivalent to
-    //! \code
-    //! log(Severity::Debug)
-    //! \endcode
-    log11_detail::LogStreamStatement<> debug()
-    {
-        return log(Severity::Debug);
-    }
+    // //! \brief A convenience function for debug streams.
+    // //!
+    // //! Creates a debug stream equivalent to
+    // //! \code
+    // //! log(Severity::Debug)
+    // //! \endcode
+    // log11_detail::LogStreamStatement<> debug()
+    // {
+    //     return log(Severity::Debug);
+    // }
 
     // info()
 
@@ -343,7 +269,11 @@ public:
     template <typename... TArgs>
     void info(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Info, message, std::forward<TArgs>(args)...);
+        if (Severity::Info >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, Severity::Info,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for info log entries.
@@ -355,31 +285,39 @@ public:
     template <typename... TArgs>
     void info(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Info, message, std::forward<TArgs>(args)...);
+        if (Severity::Info >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Info,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for info log entries.
     //!
     //! This function is equivalent to calling
     //! \code
-    //! log(may_truncate, Severity::Info, message, args...);
+    //! log(may_truncate_or_discard, Severity::Info, message, args...);
     //! \endcode
     template <typename... TArgs>
-    void info(may_truncate_t, const char* message, TArgs&&... args)
+    void info(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Info, message, std::forward<TArgs>(args)...);
+        if (Severity::Info >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Info,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! \brief A convenience function for info streams.
-    //!
-    //! Creates an info stream equivalent to
-    //! \code
-    //! log(Severity::Info)
-    //! \endcode
-    log11_detail::LogStreamStatement<> info()
-    {
-        return log(Severity::Info);
-    }
+    // //! \brief A convenience function for info streams.
+    // //!
+    // //! Creates an info stream equivalent to
+    // //! \code
+    // //! log(Severity::Info)
+    // //! \endcode
+    // log11_detail::LogStreamStatement<> info()
+    // {
+    //     return log(Severity::Info);
+    // }
 
     // warn()
 
@@ -392,7 +330,11 @@ public:
     template <typename... TArgs>
     void warn(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Warn, message, std::forward<TArgs>(args)...);
+        if (Severity::Warn >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, Severity::Warn,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for warning log entries.
@@ -404,31 +346,39 @@ public:
     template <typename... TArgs>
     void warn(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Warn, message, std::forward<TArgs>(args)...);
+        if (Severity::Warn >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Warn,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for warning log entries.
     //!
     //! This function is equivalent to calling
     //! \code
-    //! log(may_truncate, Severity::Warn, message, args...);
+    //! log(may_truncate_or_discard, Severity::Warn, message, args...);
     //! \endcode
     template <typename... TArgs>
-    void warn(may_truncate_t, const char* message, TArgs&&... args)
+    void warn(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Warn, message, std::forward<TArgs>(args)...);
+        if (Severity::Warn >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Warn,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! \brief A convenience function for warning streams.
-    //!
-    //! Creates a warning stream equivalent to
-    //! \code
-    //! log(Severity::Warn)
-    //! \endcode
-    log11_detail::LogStreamStatement<> warn()
-    {
-        return log(Severity::Warn);
-    }
+    // //! \brief A convenience function for warning streams.
+    // //!
+    // //! Creates a warning stream equivalent to
+    // //! \code
+    // //! log(Severity::Warn)
+    // //! \endcode
+    // log11_detail::LogStreamStatement<> warn()
+    // {
+    //     return log(Severity::Warn);
+    // }
 
     // error()
 
@@ -441,7 +391,11 @@ public:
     template <typename... TArgs>
     void error(const char* message, TArgs&&... args)
     {
-        doLog(Block, Severity::Error, message, std::forward<TArgs>(args)...);
+        if (Severity::Error >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, Severity::Error,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for error log entries.
@@ -453,179 +407,48 @@ public:
     template <typename... TArgs>
     void error(may_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Discard, Severity::Error, message, std::forward<TArgs>(args)...);
+        if (Severity::Error >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Error,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
     //! \brief A convenience function for error log entries.
     //!
     //! This function is equivalent to calling
     //! \code
-    //! log(may_truncate, Severity::Error, message, args...);
+    //! log(may_truncate_or_discard, Severity::Error, message, args...);
     //! \endcode
     template <typename... TArgs>
-    void error(may_truncate_t, const char* message, TArgs&&... args)
+    void error(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        doLog(Truncate, Severity::Error, message, std::forward<TArgs>(args)...);
+        if (Severity::Error >= m_severityThreshold)
+        {
+            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Error,
+                        message, std::forward<TArgs>(args)...);
+        }
     }
 
-    //! \brief A convenience function for error streams.
-    //!
-    //! Creates an error stream equivalent to
-    //! \code
-    //! log(Severity::Error)
-    //! \endcode
-    log11_detail::LogStreamStatement<> error()
-    {
-        return log(Severity::Error);
-    }
+    // //! \brief A convenience function for error streams.
+    // //!
+    // //! Creates an error stream equivalent to
+    // //! \code
+    // //! log(Severity::Error)
+    // //! \endcode
+    // log11_detail::LogStreamStatement<> error()
+    // {
+    //     return log(Severity::Error);
+    // }
 
 private:
-    enum Flags
-    {
-        StopRequest   = 0x01,
-        AppendNewLine = 0x02
-    };
+    //! The core which is in charge of the actual logging.
+    LogCore* m_core;
 
-    RingBuffer m_messageFifo;
-    std::atomic_int m_flags;
-    std::atomic<Sink*> m_sink;
+    //! The severity threshold which log levels must reach or exceed in order
+    //! to be forwarded to the core.
     std::atomic<Severity> m_severityThreshold;
-
-    char m_conversionBuffer[32];
-
-
-    void doLog(ClaimPolicy policy, Severity severity, const char* message);
-
-    template <typename TArg, typename... TArgs>
-    void doLog(ClaimPolicy policy, Severity severity, const char* format,
-               TArg&& arg, TArgs&&... args);
-
-    template <typename... TArgs, int... TIndices>
-    void doLogStream(ClaimPolicy policy, Severity severity,
-                     const std::tuple<TArgs...>& stream,
-                     std::integer_sequence<int, TIndices...>);
-
-    void consumeFifoEntries();
-    void printHeader(log11_detail::LogStatement* stmt);
-
-
-    friend class Converter;
-
-    template <typename... U>
-    friend class log11_detail::LogStreamStatement;
 };
-
-template <typename TArg, typename... TArgs>
-void Logger::doLog(ClaimPolicy policy, Severity severity, const char* format,
-                   TArg&& arg, TArgs&&... args)
-{
-    using namespace std;
-    using namespace log11_detail;
-
-    static_assert(all_serializable<typename decay<TArg>::type,
-                                   typename decay<TArgs>::type...>::value,
-                  "Unsuitable type for string interpolation");
-
-    if (severity < m_severityThreshold)
-        return;
-
-    auto serdes = Serdes<void*,
-                         typename decay<TArg>::type,
-                         typename decay<TArgs>::type...>::instance();
-    auto argSlots = serdes->requiredSize(nullptr, arg, args...);
-
-    RingBuffer::Range claimed(0, 0);
-    if (policy == Block)
-        claimed = m_messageFifo.claim(sizeof(LogStatement) + argSlots);
-    else if (policy == Truncate)
-        claimed = m_messageFifo.tryClaim(sizeof(LogStatement), sizeof(LogStatement) + argSlots);
-    else
-        claimed = m_messageFifo.tryClaim(sizeof(LogStatement) + argSlots, sizeof(LogStatement) + argSlots);
-
-    if (claimed.length == 0)
-        return;
-
-    auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(severity, format);
-    stmt->m_extensionType = 1;
-    if (claimed.length > 1)
-    {
-        argSlots = claimed.length - sizeof(LogStatement);
-        stmt->m_extensionSize = argSlots;
-        serdes->serialize(
-                m_messageFifo,
-                RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots),
-                serdes, arg, args...);
-    }
-
-    if (policy == Block)
-        m_messageFifo.publish(claimed);
-    else
-        m_messageFifo.tryPublish(claimed);
-}
-
-template <typename... TArgs, int... TIndices>
-void Logger::doLogStream(ClaimPolicy policy, Severity severity,
-                         const std::tuple<TArgs...>& stream,
-                         std::integer_sequence<int, TIndices...>)
-{
-    using namespace std;
-    using namespace log11_detail;
-
-    static_assert(sizeof...(TArgs) > 0, "Cannot log an empty stream");
-    static_assert(all_serializable<typename decay<TArgs>::type...>::value,
-                  "Unsuitable type for string interpolation");
-
-    if (severity < m_severityThreshold)
-        return;
-
-    auto serdes = Serdes<void*,
-                         typename decay<TArgs>::type...>::instance();
-    auto argSlots = serdes->requiredSize(nullptr, get<TIndices>(stream)...);
-
-    RingBuffer::Range claimed(0, 0);
-    if (policy == Block)
-        claimed = m_messageFifo.claim(sizeof(LogStatement) + argSlots);
-    else if (policy == Truncate)
-        claimed = m_messageFifo.tryClaim(sizeof(LogStatement), sizeof(LogStatement) + argSlots);
-    else
-        claimed = m_messageFifo.tryClaim(sizeof(LogStatement) + argSlots, sizeof(LogStatement) + argSlots);
-
-    if (claimed.length == 0)
-        return;
-
-    auto stmt = new (m_messageFifo[claimed.begin]) LogStatement(severity, nullptr);
-    stmt->m_extensionType = 2;
-    if (claimed.length > 1)
-    {
-        argSlots = claimed.length - sizeof(LogStatement);
-        stmt->m_extensionSize = argSlots;
-        serdes->serialize(
-                    m_messageFifo,
-                    RingBuffer::Range(claimed.begin + sizeof(LogStatement), argSlots),
-                    serdes, get<TIndices>(stream)...);
-    }
-
-    if (policy == Block)
-        m_messageFifo.publish(claimed);
-    else
-        m_messageFifo.tryPublish(claimed);
-}
-
-namespace log11_detail
-{
-
-template <typename... T>
-LogStreamStatement<T...>::~LogStreamStatement()
-{
-    if (!m_active)
-        return;
-
-    m_logger->doLogStream(
-                Logger::Block, static_cast<Severity>(m_severity),
-                m_data, std::make_integer_sequence<int, sizeof...(T)>());
-}
-
-} // namespace log11_detail
 
 } // namespace log11
 

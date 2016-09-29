@@ -27,14 +27,17 @@
 #ifndef LOG11_LOGCORE_HPP
 #define LOG11_LOGCORE_HPP
 
-#include "_config.hpp"
-
+#include "Config.hpp"
 #include "RingBuffer.hpp"
 #include "Serdes.hpp"
 #include "Severity.hpp"
+#include "Synchronic.hpp"
+#include "Utility.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <type_traits>
 
@@ -50,25 +53,47 @@ namespace log11
 class BinarySinkBase;
 class TextSink;
 
+
+
 namespace log11_detail
 {
 
-struct LogStatement
+struct Directive
 {
-    enum class Command
+    enum Command
     {
-        Terminate = 1
+        Terminate,
+        SetImmutableSpace,
+        SetBothSinks,
+        SetBinarySink,
+        SetTextSink
     };
 
-    LogStatement() = default;
+    static
+    Directive command(Command c)
+    {
+        Directive result;
+        result.isCommand = 1;
+        result.isTruncated = 0;
+        result.severityOrCommand = static_cast<unsigned char>(c);
+        return result;
+    }
 
-    LogStatement(Severity severity);
+    static
+    Directive entry(Severity s, bool truncated)
+    {
+        Directive result;
+        result.isCommand = 0;
+        result.isTruncated = truncated;
+        result.severityOrCommand = static_cast<unsigned char>(s);
+        return result;
+    }
 
-    std::int64_t timeStamp;
-    unsigned isTruncated : 1;
-    unsigned isControl : 1;
-    unsigned reserved : 11;
-    unsigned severity : 4;
+    //! If set, this is a control instruction rather than a log entry.
+    unsigned char isCommand : 1;
+    unsigned char isTruncated : 1;
+    unsigned char reserved : 3;
+    unsigned char severityOrCommand : 3;
 };
 
 } // namespace log11_detail
@@ -85,20 +110,40 @@ public:
     };
 
 
+#ifdef LOG11_USE_WEOS
+    //! \brief Creates a log core.
     explicit
-    LogCore(unsigned exponent,
-            TextSink* textSink = nullptr, BinarySinkBase* binarySink = nullptr);
-
+    LogCore(const weos::thread_attributes& attrs, std::size_t bufferSize);
+#else
     explicit
-    LogCore(unsigned exponent,
-            BinarySinkBase* binarySink, TextSink* textSink = nullptr);
+    LogCore(std::size_t bufferSize);
+#endif
 
     ~LogCore();
 
     LogCore(const LogCore&) = delete;
     LogCore& operator=(const LogCore&) = delete;
 
-    void enableImmutableStringOptimization(
+    //! \brief Sets a binary sink.
+    //!
+    //! Sets the binary sink to \p binarySink.
+    void setSink(BinarySinkBase* binarySink);
+
+    //! \brief Sets a text sink.
+    //!
+    //! Sets the text sink to \p textSink.
+    void setSink(TextSink* textSink);
+
+    //! \brief Sets binary and text sinks.
+    //!
+    //! Sets the binary sink to \p binarySink and the text sink to \p textSink.
+    void setSinks(BinarySinkBase* binarySink, TextSink* textSink);
+
+    //! \brief Enables the immutable string optimization.
+    //!
+    //! Tells the logger to optimize the strings which are located in the
+    //! memory areay <tt>[beginAddress, endAddress)</tt>.
+    void setImmutableStringSpace(
             std::uintptr_t beginAddress, std::uintptr_t endAddress);
 
     template <typename... TArgs>
@@ -112,42 +157,28 @@ private:
         Terminated
     };
 
-    struct ScratchPad
-    {
-    public:
-        ScratchPad(unsigned capacity);
-        ~ScratchPad();
-
-        ScratchPad(const ScratchPad&) = delete;
-        ScratchPad& operator=(const ScratchPad&) = delete;
-
-        void reserve(unsigned capacity, bool keepContent);
-
-        void push(char ch);
-        void push(const char* data, unsigned size);
-
-        const char* data() const noexcept;
-        unsigned size() const noexcept;
-
-    private:
-        char* m_data;
-        unsigned m_capacity;
-        unsigned m_size;
-    };
-
 
     //! An ultra-fast ring-buffer to pass log entries from the logging thread
     //! to the consumer thread.
     RingBuffer m_messageFifo;
 
-    //! A scratch pad to perform some string conversions.
-    ScratchPad m_scratchPad;
+    //! A scratch pad to hold perform some string conversions.
+    log11_detail::ScratchPad m_scratchPad;
 
     //! Options for serialization.
     log11_detail::SerdesOptions m_serdesOptions;
+    //! Set while a cross-thread change in the options is ongoing.
+    std::atomic_bool m_crossThreadChangeOngoing;
+    //! Signals when cross-thread changes are done.
+    log11_detail::synchronic<bool> m_crossThreadChangeDone;
 
-    std::atomic<BinarySinkBase*> m_binarySink;
-    std::atomic<TextSink*> m_textSink;
+    //! The attached binary sink.
+    BinarySinkBase* m_binarySink;
+    //! The attached text sink.
+    TextSink* m_textSink;
+
+    //! The generator of the log header.
+    log11_detail::RecordHeaderGenerator* m_headerGenerator;
 
     //! Signals changes in the consumer state.
     std::condition_variable m_consumerThreadCv;
@@ -204,14 +235,27 @@ void LogCore::log(ClaimPolicy policy, Severity severity,
     using namespace std;
     using namespace log11_detail;
 
+    static constexpr unsigned header_size
+            = sizeof(Directive)
+              + sizeof(std::chrono::high_resolution_clock::rep)
+              + sizeof(const char*);
+
+    // We cannot rely on the serdes options if a change is going on.
+    if (m_crossThreadChangeOngoing)
+    {
+        if (policy != Block)
+            return;
+        m_crossThreadChangeDone.expect(m_crossThreadChangeOngoing, false);
+    }
+
     auto argumentSize = doRequiredSize(m_serdesOptions, args...);
-    auto totalSize = argumentSize + sizeof(LogStatement) + sizeof(const char*);
+    auto totalSize = argumentSize + header_size;
 
     RingBuffer::Block claimed;
     switch (policy)
     {
     case Block:    claimed = m_messageFifo.claim(totalSize); break;
-    case Truncate: claimed = m_messageFifo.tryClaim(sizeof(LogStatement), totalSize); break;
+    case Truncate: claimed = m_messageFifo.tryClaim(header_size, totalSize); break;
     case Discard:  claimed = m_messageFifo.tryClaim(totalSize, totalSize); break;
     }
     if (claimed.length() == 0)
@@ -219,10 +263,11 @@ void LogCore::log(ClaimPolicy policy, Severity severity,
 
     auto stream = claimed.stream(m_messageFifo);
 
-    // TODO: Serialize LogStatement
-    LogStatement stmt(severity);
-    stmt.isTruncated = claimed.length() < totalSize;
-    stream.write(&stmt, sizeof(LogStatement));
+    // Write the header.
+    stream.write(Directive::entry(severity, claimed.length() < totalSize));
+    auto durationSinceEpoche
+            = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    stream.write(&durationSinceEpoche, sizeof(durationSinceEpoche));
     stream.write(&format, sizeof(const char*));
 
     // Serialize all the arguments.

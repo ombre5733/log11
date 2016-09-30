@@ -41,40 +41,40 @@ class BinarySink : public BinarySinkBase
 public:
     enum class TypeTag
     {
-        False = 1,
-        True,
+        False         =  1,
+        True          =  2,
 
-        Char,
+        Char          =  3,
 
-        Int8,
-        Int16,
-        Int32,
-        Int64,
+        Int8          =  4,
+        Int16         =  5,
+        Int32         =  6,
+        Int64         =  7,
 
-        VarInt16,
-        VarInt32,
-        VarInt64,
+        Uint8         =  8,
+        Uint16        =  9,
+        Uint32        = 10,
+        Uint64        = 11,
 
-        Uint8,
-        Uint16,
-        Uint32,
-        Uint64,
+        VarInt16      = 12,
+        VarInt32      = 13,
+        VarInt64      = 14,
 
-        VarUint16,
-        VarUint32,
-        VarUint64,
+        VarUint16     = 15,
+        VarUint32     = 16,
+        VarUint64     = 17,
 
-        Float,
-        Double,
-        LongDouble,
+        Float         = 18,
+        Double        = 19,
+        LongDouble    = 20,
 
-        Pointer,
+        Pointer       = 21,
 
-        String,
-        StringPointer,
-        StringView,
+        String        = 22,
+        StringPointer = 23,
+        StringView    = 24, // not used
 
-        EndOfStruct
+        EndOfStruct   = 25
     };
 
 

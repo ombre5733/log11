@@ -121,7 +121,7 @@ public:
         T temp;
         if (inStream.read(&temp, sizeof(T)))
         {
-            outStream.doPrint(std::move(temp), log11_detail::is_builtin<T>());
+            outStream << std::move(temp);
             return true;
         }
         else

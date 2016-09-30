@@ -27,6 +27,7 @@
 #include "TextStream.hpp"
 #include "String.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -108,7 +109,7 @@ const char* TextStream::Format::parse(const char* str)
     // base prefix
     if (*str == '#')
     {
-        basePrefix = true;
+        alternateForm = true;
         ++str;
     }
 
@@ -121,14 +122,15 @@ const char* TextStream::Format::parse(const char* str)
 
     // width
     while (*str >= '0' && *str <= '9')
-        width = 10 * width + (*str++ - '0');
+        minWidth = 10 * minWidth + (*str++ - '0');
 
     // precision
     if (*str == '.')
     {
+        precision = 0;
         ++str;
         while (*str >= '0' && *str <= '9')
-            m_precision = 10 * m_precision + (*str++ - '0');
+            precision = 10 * precision + (*str++ - '0');
     }
 
     // type
@@ -141,11 +143,15 @@ const char* TextStream::Format::parse(const char* str)
     case 'x': type = Hex; break;
     case 'X': type = Hex; upperCase = true; break;
 
-        // TODO: float formats
-    //case 'f':
-    //case 'F':
-    //case 'g':
-    //case 'G':
+    case 'e': type = Exponent; break;
+    case 'E': type = Exponent; upperCase = true; break;
+    case 'f': type = FixedPoint; break;
+    case 'F': type = FixedPoint; upperCase = true; break;
+    case 'g': type = GeneralFloat; break;
+    case 'G': type = GeneralFloat; upperCase = true; break;
+
+        // TODO:
+    //case '%':
     }
 
     return str;
@@ -166,21 +172,30 @@ TextStream::TextStream(TextSink& sink)
 
 TextStream& TextStream::operator<<(bool value)
 {
-    // TODO: padding
+    if (m_format.align == Format::AutoAlign)
+        m_format.align = Format::Left;
 
+    int padding = m_format.minWidth - (value ? 4 : 5);
+    padding = printPrePaddingAndSign(padding, false, Format::NoType);
     if (value)
         m_sink->putString("true", 4);
     else
         m_sink->putString("false", 5);
+    printPostPadding(padding);
+
     reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(char ch)
 {
-    // TODO: padding
+    if (m_format.align == Format::AutoAlign)
+        m_format.align = Format::Left;
 
+    int padding = m_format.minWidth - 1;
+    padding = printPrePaddingAndSign(padding, false, Format::NoType);
     m_sink->putChar(ch);
+    printPostPadding(padding);
     reset();
     return *this;
 }
@@ -280,21 +295,21 @@ TextStream& TextStream::operator<<(unsigned long long value)
 
 TextStream& TextStream::operator<<(float value)
 {
-    m_sink->putString("TODO", 4);
+    printFloat(value);
     reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(double value)
 {
-    m_sink->putString("TODO", 4);
+    printFloat(value);
     reset();
     return *this;
 }
 
 TextStream& TextStream::operator<<(long double value)
 {
-    m_sink->putString("TODO", 4);
+    printFloat(value);
     reset();
     return *this;
 }
@@ -305,15 +320,15 @@ TextStream& TextStream::operator<<(long double value)
 
 TextStream& TextStream::operator<<(const void* value)
 {
-    // TODO: print padding before changing the format
+    if (m_format.align == Format::AutoAlign)
+        m_format.align = Format::Right;
+    int padding = m_format.minWidth - 2 - 2 * sizeof(void*);
+    padding = printPrePaddingAndSign(padding, false, Format::NoType);
 
-    m_format.align = Format::AlignAfterSign;
-    m_format.fill = '0';
-    m_format.width = 2 + sizeof(void*) * 2;
-    m_format.basePrefix = true;
-    m_format.type = Format::Hex;
+    m_sink->putString("0x", 2);
+    printIntegerDigits<16>(uintptr_t(value), uintptr_t(1) << (sizeof(void*) * 8 - 4));
 
-    printInteger(uintptr_t(value), false); // TODO: call printIntegerDigits directly
+    printPostPadding(padding);
     reset();
     return *this;
 }
@@ -349,14 +364,14 @@ TextStream& TextStream::operator<<(const SplitStringView& str)
 
 void TextStream::printArgument(unsigned)
 {
+    // TODO: Padding
+
     m_sink->putString("<?>", 3);
 }
 
 void TextStream::reset()
 {
     m_format = Format();
-
-    m_padding = 0;
 }
 
 template <unsigned char TBase>
@@ -394,19 +409,24 @@ void TextStream::printInteger(max_int_type value, bool isNegative)
 {
     if (m_format.align == Format::AutoAlign)
         m_format.align = Format::Right;
+    if (m_format.type == Format::NoType)
+        m_format.type = Format::Decimal;
 
-    m_padding = m_format.width;
+    int padding = m_format.minWidth;
     max_int_type divisor;
     switch (m_format.type)
     {
-    case Format::Binary:  m_padding -= countDigits< 2>(value, divisor); break;
+    case Format::Binary:  padding -= countDigits< 2>(value, divisor); break;
     default:
-    case Format::Decimal: m_padding -= countDigits<10>(value, divisor); break;
-    case Format::Octal:   m_padding -= countDigits< 8>(value, divisor); break;
-    case Format::Hex:     m_padding -= countDigits<16>(value, divisor); break;
+    case Format::Decimal: padding -= countDigits<10>(value, divisor); break;
+    case Format::Octal:   padding -= countDigits< 8>(value, divisor); break;
+    case Format::Hex:     padding -= countDigits<16>(value, divisor); break;
     }
 
-    printPrePaddingAndSign(isNegative);
+    padding = printPrePaddingAndSign(
+                  padding,
+                  isNegative,
+                  m_format.alternateForm ? m_format.type : Format::NoType);
 
     switch (m_format.type)
     {
@@ -417,28 +437,174 @@ void TextStream::printInteger(max_int_type value, bool isNegative)
     case Format::Hex:     printIntegerDigits<16>(value, divisor); break;
     }
 
-    if (m_format.align == Format::Left || m_format.align == Format::Centered)
-        while (m_padding-- > 0)
-            m_sink->putChar(m_format.fill);
+    printPostPadding(padding);
 }
 
-void TextStream::printPrePaddingAndSign(bool isNegative)
+void TextStream::printFloat(double value)
+{
+    if (m_format.align == Format::AutoAlign)
+        m_format.align = Format::Right;
+    if (m_format.precision < 0)
+        m_format.precision = 6;
+    if (m_format.type == Format::NoType)
+        m_format.type = Format::GeneralFloat;
+
+    bool isNegative = signbit(value);
+    if (isNegative)
+        value = -value;
+
+    bool removeTrailingZeros = m_format.type == Format::GeneralFloat && !m_format.alternateForm;
+    int exponent = 0;
+
+    // Handle special values.
+    int klass = fpclassify(value);
+    if (klass == FP_NAN || klass == FP_INFINITE)
+    {
+        int padding = m_format.minWidth - 3;
+        padding = printPrePaddingAndSign(
+                    padding,
+                    klass == FP_INFINITE && isNegative, Format::NoType);
+        switch (klass)
+        {
+        case FP_NAN:      m_sink->putString("nan", 3); break;
+        case FP_INFINITE: m_sink->putString("inf", 3); break;
+        }
+        printPostPadding(padding);
+        return;
+    }
+    else if (klass == FP_ZERO)
+    {
+        // Zeros are handled just like numbers in the interval [0, 10).
+        if (m_format.type == Format::GeneralFloat)
+        {
+            m_format.type = Format::FixedPoint;
+            if (m_format.precision)
+                m_format.precision -= 1;
+        }
+    }
+    else
+    {
+        if (m_format.type == Format::GeneralFloat)
+        {
+            if (m_format.precision == 0)
+                m_format.precision = 1;
+
+            exponent = floor(log10(value));
+            double temp = value * pow(double(10), -exponent);
+            temp += 5 * pow(double(10), -double(m_format.precision));
+            if (temp >= double(10))
+            {
+                temp /= double(10);
+                ++exponent;
+            }
+
+            if (exponent >= -4 && exponent < m_format.precision - 1)
+            {
+                m_format.type = Format::FixedPoint;
+                m_format.precision = m_format.precision - exponent - 1;
+                value += 5 * pow(double(10), -double(m_format.precision + 1));
+            }
+            else
+            {
+                m_format.type = Format::Exponent;
+                m_format.precision -= 1;
+                value = temp;
+            }
+        }
+        else
+        {
+            if (m_format.type == Format::Exponent)
+            {
+                // Scale the value such that 1 <= value < 10.
+                exponent = floor(log10(value));
+                value *= pow(double(10), -exponent);
+            }
+
+            value += 5 * pow(double(10), -double(m_format.precision + 1));
+            if (m_format.type == Format::Exponent && value >= double(10))
+            {
+                value /= double(10);
+                ++exponent;
+            }
+        }
+    }
+
+    max_int_type integer, fraction;
+    unsigned fractionDivisor;
+    {
+        double intf;
+        double fracf = modf(value, &intf);
+        double scale = pow(double(10), double(m_format.precision));
+        fracf *= scale;
+        integer = intf;
+        fraction = fracf;
+        fractionDivisor = unsigned(scale) / 10;
+    }
+    if (removeTrailingZeros)
+        while (m_format.precision && fraction % 10 == 0)
+        {
+            fraction /= 10;
+            fractionDivisor /= 10;
+            --m_format.precision;
+        }
+
+    max_int_type divisor = 1;
+    int integerDigits = m_format.type == Format::Exponent
+                        ? 1
+                        : countDigits<10>(integer, divisor);
+    int padding = m_format.minWidth - (integerDigits + m_format.precision);
+    if (m_format.precision || m_format.alternateForm)
+        padding -= 1; // '.'
+    if (m_format.type == Format::Exponent)
+        padding -= 4; // 'e+xx'
+
+    padding = printPrePaddingAndSign(padding, isNegative, Format::NoType);
+    printIntegerDigits<10>(integer, divisor);
+
+    if (m_format.precision)
+    {
+        m_sink->putChar('.');
+        printIntegerDigits<10>(fraction, fractionDivisor ? fractionDivisor : 1);
+    }
+    else if (m_format.alternateForm)
+        m_sink->putChar('.');
+
+    if (m_format.type == Format::Exponent)
+    {
+         m_sink->putChar(m_format.upperCase ? 'E' : 'e');
+         if (exponent >= 0)
+         {
+             m_sink->putChar('+');
+         }
+         else
+         {
+             m_sink->putChar('-');
+             exponent = -exponent;
+         }
+         printIntegerDigits<10>(exponent, 10);
+    }
+
+    printPostPadding(padding);
+}
+
+int TextStream::printPrePaddingAndSign(
+        int padding, bool isNegative, Format::Type prefix)
 {
     if (isNegative || m_format.sign != Format::OnlyNegative)
-        --m_padding;
-    if (m_format.basePrefix)
-        m_padding -= 2;
+        --padding;
+    if (prefix != Format::NoType)
+        padding -= 2;
 
     if (m_format.align == Format::Right)
     {
-        while (m_padding-- > 0)
+        while (padding-- > 0)
             m_sink->putChar(m_format.fill);
     }
     else if (m_format.align == Format::Centered)
     {
-        for (int count = 0; count < (m_padding + 1) / 2; ++count)
+        for (int count = 0; count < (padding + 1) / 2; ++count)
             m_sink->putChar(m_format.fill);
-        m_padding /= 2;
+        padding /= 2;
     }
 
     if (isNegative)
@@ -448,18 +614,27 @@ void TextStream::printPrePaddingAndSign(bool isNegative)
     else if (m_format.sign == Format::Always)
         m_sink->putChar('+');
 
-    if (m_format.basePrefix)
-        switch (m_format.type)
-        {
-        case Format::Binary:  m_sink->putString("0b", 2); break;
-        default:
-        case Format::Decimal: m_sink->putString("0d", 2); break;
-        case Format::Octal:   m_sink->putString("0o", 2); break;
-        case Format::Hex:     m_sink->putString("0x", 2); break;
-        }
+    switch (prefix)
+    {
+    default:
+    case Format::NoType:  break;
+    case Format::Binary:  m_sink->putString("0b", 2); break;
+    case Format::Decimal: m_sink->putString("0d", 2); break;
+    case Format::Octal:   m_sink->putString("0o", 2); break;
+    case Format::Hex:     m_sink->putString("0x", 2); break;
+    }
 
     if (m_format.align == Format::AlignAfterSign)
-        while (m_padding-- > 0)
+        while (padding-- > 0)
+            m_sink->putChar(m_format.fill);
+
+    return padding;
+}
+
+void TextStream::printPostPadding(int padding)
+{
+    if (m_format.align == Format::Left || m_format.align == Format::Centered)
+        while (padding-- > 0)
             m_sink->putChar(m_format.fill);
 }
 

@@ -185,7 +185,7 @@ BinaryStream& BinaryStream::operator<<(T&& value)
             std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
     m_sink->beginStruct(tag);
     log11_detail::try_typeinfo_binarystream_write<std::decay_t<T>>::f(
-        *this, value, std::true_type());
+        *this, std::forward<T>(value), std::true_type());
     m_sink->endStruct(tag);
 
     return *this;

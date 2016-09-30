@@ -168,7 +168,7 @@ private:
     //! Options for serialization.
     log11_detail::SerdesOptions m_serdesOptions;
     //! Set while a cross-thread change in the options is ongoing.
-    std::atomic_bool m_crossThreadChangeOngoing;
+    std::atomic<bool> m_crossThreadChangeOngoing;
     //! Signals when cross-thread changes are done.
     log11_detail::synchronic<bool> m_crossThreadChangeDone;
 

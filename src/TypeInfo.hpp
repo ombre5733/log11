@@ -24,6 +24,19 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
+#ifndef LOG11_TYPEINFO_HPP
+#define LOG11_TYPEINFO_HPP
+
+#include "Config.hpp"
+
+#include <type_traits>
+#include <utility>
+
+#ifdef LOG11_USE_WEOS
+#include <weos/utility.hpp>
+#endif
+
+
 namespace log11
 {
 
@@ -40,4 +53,63 @@ static constexpr unsigned user_defined_type_tag_begin = 1024;
 //! <tt>user_defined_type_tag_begin <= tag < user_defined_type_tag_end</tt>.
 static constexpr unsigned user_defined_type_tag_end = 4096;
 
+//! \brief A traits class to make enum behave like integers.
+//!
+//! A specialization TreatAsInteger<E> must derive from <tt>std::true_type</tt>
+//! in order to enable automatic enum to integer conversion.
+template <typename T>
+struct TreatAsInteger : public std::false_type
+{
+};
+
+//! Makes the enum \p e behave like an integer when passed to the logger.
+#define LOG11_TREAT_ENUM_AS_INTEGER(e)                                         \
+    namespace log11 {                                                          \
+        template <>                                                            \
+        struct TreatAsInteger<e> : public std::true_type                       \
+        {                                                                      \
+        };                                                                     \
+    }
+
+
+
+namespace log11_detail
+{
+
+template <typename T>
+struct Decayer
+{
+    template <typename U>
+    static constexpr
+    std::decay_t<U> decay(U&& x) noexcept
+    {
+        return std::forward<U>(x);
+    }
+};
+
+template <typename T>
+struct EnumDecayer
+{
+    static constexpr
+    std::underlying_type_t<T> decay(T x) noexcept
+    {
+        return static_cast<std::underlying_type_t<T>>(x);
+    }
+};
+
+template <typename T>
+using Decayer_t = typename std::conditional_t<std::is_enum<T>::value && TreatAsInteger<T>::value,
+                                              EnumDecayer<T>,
+                                              Decayer<T>>;
+
+template <typename T>
+auto decayArgument(T&& x) -> decltype(Decayer_t<std::decay_t<T>>::decay(std::forward<T>(x)))
+{
+    return Decayer_t<std::decay_t<T>>::decay(std::forward<T>(x));
+}
+
+} // namespace log11_detail
+
 } // namespace log11
+
+#endif // LOG11_TYPEINFO_HPP

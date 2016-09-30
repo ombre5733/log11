@@ -30,6 +30,7 @@
 #include "Config.hpp"
 #include "LogCore.hpp"
 #include "Severity.hpp"
+#include "TypeInfo.hpp"
 
 
 namespace log11
@@ -90,7 +91,7 @@ public:
         if (severity >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Block, severity,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -107,7 +108,7 @@ public:
         if (severity >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Discard, severity,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -124,7 +125,7 @@ public:
         if (severity >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, severity,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -150,7 +151,7 @@ public:
         if (Severity::Trace >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Trace,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -166,7 +167,7 @@ public:
         if (Severity::Trace >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Trace,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -182,7 +183,7 @@ public:
         if (Severity::Trace >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Trace,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -211,7 +212,7 @@ public:
         if (Severity::Debug >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Debug,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -227,7 +228,7 @@ public:
         if (Severity::Debug >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Debug,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -243,7 +244,7 @@ public:
         if (Severity::Debug >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Debug,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -272,7 +273,7 @@ public:
         if (Severity::Info >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Info,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -288,7 +289,7 @@ public:
         if (Severity::Info >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Info,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -304,7 +305,7 @@ public:
         if (Severity::Info >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Info,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -333,7 +334,7 @@ public:
         if (Severity::Warn >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Warn,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -349,7 +350,7 @@ public:
         if (Severity::Warn >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Warn,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -365,7 +366,7 @@ public:
         if (Severity::Warn >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Warn,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -394,7 +395,7 @@ public:
         if (Severity::Error >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Error,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -410,7 +411,7 @@ public:
         if (Severity::Error >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Error,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 
@@ -426,7 +427,7 @@ public:
         if (Severity::Error >= m_severityThreshold)
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Error,
-                        message, std::forward<TArgs>(args)...);
+                        message, log11_detail::decayArgument(args)...);
         }
     }
 

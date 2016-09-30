@@ -55,27 +55,17 @@ ScratchPad::~ScratchPad()
         delete[] m_data;
 }
 
-void ScratchPad::reserve(unsigned capacity, bool keepContent) // TODO: Rename to resize and remove keepContent
+void ScratchPad::resize(unsigned capacity)
 {
     if (capacity <= m_capacity)
         return;
 
-    if (keepContent && m_size)
-    {
-        char* newData = new char[capacity];
+    char* newData = new char[capacity];
+    if (m_size)
         memcpy(newData, m_data, m_size);
-        delete[] m_data;
-        m_data = newData;
-        m_capacity = capacity;
-    }
-    else
-    {
-        delete[] m_data;
-        m_data = nullptr;
-        m_data = new char[capacity];
-        m_capacity = capacity;
-        m_size = 0;
-    }
+    delete[] m_data;
+    m_data = newData;
+    m_capacity = capacity;
 }
 
 void ScratchPad::clear() noexcept
@@ -86,7 +76,7 @@ void ScratchPad::clear() noexcept
 void ScratchPad::push(char ch)
 {
     if (m_size == m_capacity)
-        reserve((m_size + 7) & ~7, true);
+        resize((m_size + 7) & ~7);
     m_data[m_size] = ch;
     ++m_size;
 }
@@ -95,7 +85,7 @@ void ScratchPad::push(const char* data, unsigned size)
 {
     unsigned newSize = m_size + size;
     if (newSize > m_capacity)
-        reserve((newSize + 7) & ~7, true);
+        resize((newSize + 7) & ~7);
     memcpy(m_data + m_size, data, size);
     m_size = newSize;
 }
@@ -111,7 +101,7 @@ unsigned ScratchPad::size() const noexcept
 }
 
 // ----=====================================================================----
-//     Log header printers
+//     Record header generators
 // ----=====================================================================----
 
 struct LiteralGenerator : public RecordHeaderGenerator

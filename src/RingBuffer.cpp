@@ -103,17 +103,16 @@ bool RingBuffer::Stream::write(const void* source, unsigned size) noexcept
     }
 }
 
-bool RingBuffer::Stream::readString(SplitStringView& view, unsigned size) noexcept
+unsigned RingBuffer::Stream::readString(SplitStringView& view, unsigned size) noexcept
 {
     if (m_length == 0)
-        return false;
+        return 0;
 
-    if (size > m_length)
-        size = m_length;
-    m_buffer.unwrap(m_begin, view, size);
-    m_begin += size;
-    m_length -= size;
-    return true;
+    unsigned clippedSize = size <= m_length ? size : m_length;
+    m_buffer.unwrap(m_begin, view, clippedSize);
+    m_begin += clippedSize;
+    m_length -= clippedSize;
+    return clippedSize;
 }
 
 bool RingBuffer::Stream::writeString(const void* source, unsigned size) noexcept

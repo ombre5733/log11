@@ -203,7 +203,7 @@ public:
     ScratchPad(const ScratchPad&) = delete;
     ScratchPad& operator=(const ScratchPad&) = delete;
 
-    void reserve(unsigned capacity, bool keepContent);
+    void resize(unsigned capacity);
 
     void clear() noexcept;
 

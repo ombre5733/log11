@@ -319,13 +319,11 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
 
 
         log11_detail::SerdesBase* serdes;
-        if (inStream.read(&serdes, sizeof(void*)) && serdes)
+        if (!inStream.read(&serdes, sizeof(void*))
+            || !serdes
+            || !serdes->deserialize(inStream, outStream))
         {
-            serdes->deserialize(inStream, outStream);
-        }
-        else
-        {
-            // TODO: Output a marker
+            sink->putString("<?>", 3);
         }
 
         ++argCounter;
@@ -334,7 +332,15 @@ void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
     if (iter != marker)
         sink->putString(marker, iter - marker);
 
-    // TODO: Output rest of arguments
+    log11_detail::SerdesBase* serdes;
+    while (inStream.read(&serdes, sizeof(void*)) && serdes)
+    {
+        sink->putString(" <", 2);
+        bool result = serdes->deserialize(inStream, outStream);
+        sink->putChar('>');
+        if (!result)
+            break;
+    }
 }
 
 void LogCore::writeBinary(BinarySinkBase* sink, RingBuffer::Stream inStream)

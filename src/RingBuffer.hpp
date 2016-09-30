@@ -55,7 +55,7 @@ public:
 
         bool write(const void* source, unsigned size) noexcept;
 
-        bool readString(SplitStringView& view, unsigned size) noexcept;
+        unsigned readString(SplitStringView& view, unsigned size) noexcept;
 
         bool writeString(const void* source, unsigned size) noexcept;
 

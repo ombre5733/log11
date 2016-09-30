@@ -123,7 +123,7 @@ bool ImmutableCharStarSerdes::deserialize(
     Immutable<const char*> str;
     if (inStream.read(&str, sizeof(Immutable<const char*>)))
     {
-        outStream << static_cast<const char*>(str); // TODO: Should we do this?
+        outStream << static_cast<const char*>(str);
         return true;
     }
     else
@@ -147,11 +147,12 @@ bool MutableCharStarSerdes::deserialize(
 {
     std::uint16_t length;
     SplitStringView str;
-    if (inStream.read(&length, sizeof(std::uint16_t))
-        && inStream.readString(str, length))
+    if (inStream.read(&length, sizeof(std::uint16_t)))
     {
-        outStream << str;
-        return true;
+        auto readLength = inStream.readString(str, length);
+        if (readLength)
+            outStream << str;
+        return readLength == length;
     }
     else
     {
@@ -164,11 +165,12 @@ bool MutableCharStarSerdes::deserialize(
 {
     std::uint16_t length;
     SplitStringView str;
-    if (inStream.read(&length, sizeof(std::uint16_t))
-        && inStream.readString(str, length))
+    if (inStream.read(&length, sizeof(std::uint16_t)))
     {
-        outStream << str;
-        return true;
+        auto readLength = inStream.readString(str, length);
+        if (readLength)
+            outStream << str;
+        return readLength == length;
     }
     else
     {

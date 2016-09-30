@@ -75,7 +75,7 @@ struct try_textstream_shift_operator
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        stream << std::move(value);
+        stream << std::forward<U>(value);
     }
 
     template <typename U>
@@ -103,14 +103,14 @@ struct try_free_textstream_write
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        write(stream, std::move(value));
+        write(stream, std::forward<U>(value));
     }
 
     template <typename U>
     static
     void f(log11::TextStream& stream, U&& value, not_t<can_call>)
     {
-        try_textstream_shift_operator<T>::f(stream, std::move(value), std::true_type());
+        try_textstream_shift_operator<T>::f(stream, std::forward<U>(value), std::true_type());
     }
 };
 
@@ -130,14 +130,41 @@ struct try_member_textstream_write
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        std::move(value).write(stream);
+        std::forward<U>(value).write(stream);
     }
 
     template <typename U>
     static
     void f(log11::TextStream& stream, U&& value, not_t<can_call>)
     {
-        try_free_textstream_write<T>::f(stream, std::move(value), std::true_type());
+        try_free_textstream_write<T>::f(stream, std::forward<U>(value), std::true_type());
+    }
+};
+
+template <typename T>
+struct try_typeinfo_textstream_write
+{
+    template <typename U>
+    static constexpr auto test(U*)
+        -> decltype(log11::TypeInfo<U>::write(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
+
+    template <typename U>
+    static constexpr std::false_type test(...);
+
+    using can_call = decltype(test<T>(0));
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, can_call)
+    {
+        log11::TypeInfo<T>::write(stream, value);
+    }
+
+    template <typename U>
+    static
+    void f(log11::TextStream& stream, U&& value, not_t<can_call>)
+    {
+        try_member_textstream_write<T>::f(stream, std::forward<U>(value), std::true_type());
     }
 };
 
@@ -203,6 +230,10 @@ public:
     TextStream& operator<<(const char* str);
     TextStream& operator<<(const SplitStringView& str);
 
+    template <typename T,
+              typename = std::enable_if_t<!log11_detail::is_builtin<T>::value>>
+    TextStream& operator<<(T&& value);
+
     template <typename... TArgs>
     TextStream& write(const char* fmt, TArgs&&... args);
 
@@ -234,7 +265,7 @@ private:
 
         enum Type : unsigned char
         {
-            Default,
+            NoType,
 
             Binary,
             Character,
@@ -242,33 +273,35 @@ private:
             Octal,
             Hex,
 
-            // TODO: Float types
+            Exponent,
+            FixedPoint,
+            GeneralFloat
         };
 
 
         constexpr
         Format() noexcept
             : m_argumentIndex(0),
-              width(0),
-              m_precision(0),
+              minWidth(0),
+              precision(-1),
               fill(' '),
               align(AutoAlign),
               sign(OnlyNegative),
-              basePrefix(false),
+              alternateForm(false),
               upperCase(false),
-              type(Default)
+              type(NoType)
         {
         }
 
         const char* parse(const char* str);
 
         int m_argumentIndex;
-        int width;
-        int m_precision;
+        int minWidth;
+        int precision;
         char fill;
         Alignment align;
         SignPolicy sign;
-        bool basePrefix;
+        bool alternateForm;
         bool upperCase;
         Type type;
     };
@@ -277,28 +310,7 @@ private:
 
     Format m_format;
 
-    // Additional state for printing. TO BE CHANGED
-    int m_padding;
 
-
-
-    template <typename T>
-    void doPrint(T value, /* is_builtin = */ std::true_type)
-    {
-        *this << value;
-    }
-
-    template <typename T>
-    void doPrint(T&& value, /* is_builtin = */ std::false_type)
-    {
-        // TODO: padding
-
-        // TODO: If this->m_format.align != left, we have to use a buffered sink
-        log11_detail::TextForwarderSink sink(*this);
-        TextStream chainedStream(sink);
-        log11_detail::try_member_textstream_write<T>::f(
-            chainedStream, std::move(value), std::true_type());
-    }
 
     void printArgument(unsigned index);
 
@@ -312,8 +324,10 @@ private:
     void printIntegerDigits(max_int_type value, max_int_type divisor);
 
     void printInteger(max_int_type value, bool isNegative);
+    void printFloat(double value);
 
-    void printPrePaddingAndSign(bool isNegative);
+    int printPrePaddingAndSign(int padding, bool isNegative, Format::Type prefix);
+    void printPostPadding(int padding);
 
     void reset();
 
@@ -324,6 +338,20 @@ private:
     template <typename T>
     friend class log11_detail::Serdes;
 };
+
+template <typename T, typename>
+TextStream& TextStream::operator<<(T&& value)
+{
+    // TODO: padding
+    // TODO: If this->m_format.align != left, we have to use a buffered sink
+
+    log11_detail::TextForwarderSink sink(*this);
+    TextStream chainedStream(sink);
+    log11_detail::try_typeinfo_textstream_write<std::decay_t<T>>::f(
+        chainedStream, std::forward<T>(value), std::true_type());
+
+    return *this;
+}
 
 template <typename... TArgs>
 TextStream& TextStream::write(const char* fmt, TArgs&&... args)
@@ -367,7 +395,7 @@ template <typename TArg, typename... TArgs>
 void TextStream::printArgument(unsigned index, TArg&& arg, TArgs&&... args)
 {
     if (index == 0)
-        doPrint(std::move(arg), log11_detail::is_builtin<TArg>());
+        *this << std::move(arg);
     else
         printArgument(index - 1, std::move(args)...);
 }

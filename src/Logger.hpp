@@ -74,6 +74,11 @@ public:
     //! Destroys the logger.
     ~Logger();
 
+    //! \brief Enables or disables the logger.
+    //!
+    //! If \p enable is set, the logger is enabled.
+    void setEnabled(bool enable) noexcept;
+
     //! \brief Sets the logging level.
     //!
     //! Sets the logging level to the given \p threshold. Log messages with
@@ -88,7 +93,8 @@ public:
     template <typename... TArgs>
     void log(Severity severity, const char* message, TArgs&&... args)
     {
-        if (severity >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && severity >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Block, severity,
                         message, log11_detail::decayArgument(args)...);
@@ -105,7 +111,8 @@ public:
     void log(may_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        if (severity >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && severity >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, severity,
                         message, log11_detail::decayArgument(args)...);
@@ -122,7 +129,8 @@ public:
     void log(may_truncate_or_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        if (severity >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && severity >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, severity,
                         message, log11_detail::decayArgument(args)...);
@@ -148,7 +156,8 @@ public:
     template <typename... TArgs>
     void trace(const char* message, TArgs&&... args)
     {
-        if (Severity::Trace >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Trace >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Trace,
                         message, log11_detail::decayArgument(args)...);
@@ -164,7 +173,8 @@ public:
     template <typename... TArgs>
     void trace(may_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Trace >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Trace >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Trace,
                         message, log11_detail::decayArgument(args)...);
@@ -180,7 +190,8 @@ public:
     template <typename... TArgs>
     void trace(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Trace >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Trace >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Trace,
                         message, log11_detail::decayArgument(args)...);
@@ -209,7 +220,8 @@ public:
     template <typename... TArgs>
     void debug(const char* message, TArgs&&... args)
     {
-        if (Severity::Debug >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Debug >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Debug,
                         message, log11_detail::decayArgument(args)...);
@@ -225,7 +237,8 @@ public:
     template <typename... TArgs>
     void debug(may_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Debug >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Debug >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Debug,
                         message, log11_detail::decayArgument(args)...);
@@ -241,7 +254,8 @@ public:
     template <typename... TArgs>
     void debug(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Debug >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Debug >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Debug,
                         message, log11_detail::decayArgument(args)...);
@@ -270,7 +284,8 @@ public:
     template <typename... TArgs>
     void info(const char* message, TArgs&&... args)
     {
-        if (Severity::Info >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Info >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Info,
                         message, log11_detail::decayArgument(args)...);
@@ -286,7 +301,8 @@ public:
     template <typename... TArgs>
     void info(may_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Info >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Info >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Info,
                         message, log11_detail::decayArgument(args)...);
@@ -302,7 +318,8 @@ public:
     template <typename... TArgs>
     void info(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Info >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Info >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Info,
                         message, log11_detail::decayArgument(args)...);
@@ -331,7 +348,8 @@ public:
     template <typename... TArgs>
     void warn(const char* message, TArgs&&... args)
     {
-        if (Severity::Warn >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Warn >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Warn,
                         message, log11_detail::decayArgument(args)...);
@@ -347,7 +365,8 @@ public:
     template <typename... TArgs>
     void warn(may_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Warn >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Warn >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Warn,
                         message, log11_detail::decayArgument(args)...);
@@ -363,7 +382,8 @@ public:
     template <typename... TArgs>
     void warn(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Warn >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Warn >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Warn,
                         message, log11_detail::decayArgument(args)...);
@@ -392,7 +412,8 @@ public:
     template <typename... TArgs>
     void error(const char* message, TArgs&&... args)
     {
-        if (Severity::Error >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Error >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Block, Severity::Error,
                         message, log11_detail::decayArgument(args)...);
@@ -408,7 +429,8 @@ public:
     template <typename... TArgs>
     void error(may_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Error >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Error >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, Severity::Error,
                         message, log11_detail::decayArgument(args)...);
@@ -424,7 +446,8 @@ public:
     template <typename... TArgs>
     void error(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        if (Severity::Error >= m_severityThreshold)
+        auto flags = m_flags.load();
+        if ((flags & 0x80) != 0 && Severity::Error >= Severity(flags & 0x7F))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Error,
                         message, log11_detail::decayArgument(args)...);
@@ -448,7 +471,7 @@ private:
 
     //! The severity threshold which log levels must reach or exceed in order
     //! to be forwarded to the core.
-    std::atomic<Severity> m_severityThreshold;
+    std::atomic<unsigned char> m_flags;
 };
 
 } // namespace log11

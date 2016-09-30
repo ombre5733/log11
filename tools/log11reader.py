@@ -56,24 +56,10 @@ class Deserializer:
                 break
         return r
 
-    def _readFalse(self):
-        return False
-
-    def _readTrue(self):
-        return True
-
     def _read(self, fmt):
         r = struct.unpack_from(fmt, self._data)
         self._data = self._data[struct.calcsize(fmt):]
         return r[0]
-
-    def _readChar(self):
-        c = chr(self._data[0])
-        self._data = self._data[1:]
-        return c
-
-    def _readInt8(self):
-        pass
 
     def _readString(self):
         l = self._readVarUint()
@@ -86,8 +72,8 @@ class Deserializer:
         return r
 
 
-    _map = dict([( 1, _readFalse),
-                 ( 2, _readTrue),
+    _map = dict([( 1, lambda s: False),
+                 ( 2, lambda s: True),
                  ( 3, lambda s: Deserializer._read(s, '<c')),
                  ( 4, lambda s: Deserializer._read(s, '<b')),
                  ( 5, lambda s: Deserializer._read(s, '<h')),

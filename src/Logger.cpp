@@ -37,7 +37,7 @@ namespace log11
 
 Logger::Logger(LogCore* core)
     : m_core(core),
-      m_severityThreshold(Severity::Info)
+      m_flags(static_cast<unsigned char>(Severity::Info) | 0x80)
 {
 }
 
@@ -45,9 +45,18 @@ Logger::~Logger()
 {
 }
 
+void Logger::setEnabled(bool enable) noexcept
+{
+    auto flags = m_flags.load() & 0x7F;
+    if (enable)
+        flags |= 0x80;
+    m_flags = flags;
+}
+
 void Logger::setLevel(Severity severity) noexcept
 {
-    m_severityThreshold = severity;
+    auto flags = m_flags.load();
+    m_flags = static_cast<unsigned char>(severity) | (flags & 0x80);
 }
 
 } // namespace log11

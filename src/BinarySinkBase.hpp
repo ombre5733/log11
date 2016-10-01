@@ -29,10 +29,10 @@
 
 #include "LogRecordData.hpp"
 #include "Severity.hpp"
-#include "String.hpp"
+#include "SinkBase.hpp"
 #include "Utility.hpp"
 
-#include <chrono>
+#include <atomic>
 #include <cstddef>
 
 
@@ -42,25 +42,11 @@ namespace log11
 //! \brief The base class for all binary logger sinks.
 //!
 //! The BinarySinkBase is the base class for all binary logger sinks.
-class BinarySinkBase
+class BinarySinkBase : public SinkBase
 {
 public:
     using byte = std::uint8_t; // TODO: std::byte
 
-
-    //! Destroys the sink.
-    virtual
-    ~BinarySinkBase()
-    {
-    }
-
-    //! Called when a new log entry starts.
-    virtual
-    void beginLogEntry(const LogRecordData& data) = 0;
-
-    //! Called when a log entry ends.
-    virtual
-    void endLogEntry() = 0;
 
 
     virtual
@@ -131,10 +117,19 @@ public:
 
 
     virtual
+    void beginFormatTuple() = 0;
+
+    virtual
+    void endFormatTuple() = 0;
+
+    virtual
     void beginStruct(std::uint32_t tag) = 0;
 
     virtual
     void endStruct(std::uint32_t tag) = 0;
+
+    virtual
+    void writeEnum(std::uint32_t tag, std::int64_t value) = 0;
 };
 
 } // namespace log11

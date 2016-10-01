@@ -27,157 +27,129 @@
 #ifndef LOG11_UTILITY_HPP
 #define LOG11_UTILITY_HPP
 
+#include "Config.hpp"
+#include "TypeInfo.hpp"
+
+#include <atomic>
+#include <cstddef>
+#include <tuple>
 #include <type_traits>
+#include <utility>
+
+#ifdef LOG11_USE_WEOS
+#include <weos/utility.hpp>
+#endif
 
 
 namespace log11
 {
 class LogRecordData;
-class SplitStringView;
 
-template <typename T>
-class Format;
+// ----=====================================================================----
+//     Immutable
+// ----=====================================================================----
 
 template <typename T>
 class Immutable;
 
-
-
-namespace log11_detail
-{
-template <typename T>
-struct is_format : std::false_type
-{
-};
-
-template <typename T>
-struct is_format<Format<T>> : std::true_type
-{
-};
-
-template <typename T>
-struct is_immutable : std::false_type
-{
-};
-
-template <typename T>
-struct is_immutable<Immutable<T>> : std::true_type
-{
-};
-
-} // namespace log11_detail
-
-
-
-//! Marks a string as immutable.
-template <typename T>
-class Immutable
+//! A pointer to an immutable string (a string residing in the ROM area).
+template <>
+class Immutable<const char*>
 {
 public:
-    static_assert(!log11_detail::is_immutable<T>::value, "");
+    using type = const char*;
 
     Immutable() = default;
 
     constexpr explicit
-    Immutable(T v) noexcept
+    Immutable(type v) noexcept
         : m_value(v)
     {
     }
 
     constexpr
-    const char* get() const noexcept
+    type get() const noexcept
     {
         return m_value;
     }
 
     constexpr explicit
-    operator T() const noexcept
+    operator type() const noexcept
     {
         return m_value;
     }
 
 private:
-    T m_value;
+    type m_value;
 };
 
-//! Marks a string as format string.
-template <typename T>
-class Format
+// ----=====================================================================----
+//     SplitStringView
+// ----=====================================================================----
+
+struct SplitStringView
 {
-public:
-    static_assert(!log11_detail::is_format<T>::value, "");
-    static_assert(!log11_detail::is_immutable<T>::value, "");
-
-    Format() = default;
-
-    constexpr explicit
-    Format(T v)
-        : m_value(v)
-    {
-    }
-
-    explicit
-    operator T()
-    {
-        return m_value;
-    }
-
-private:
-    T m_value;
+    const char* begin1;
+    std::size_t length1;
+    const char* begin2;
+    std::size_t length2;
 };
-
-
 
 namespace log11_detail
 {
 
+// ----=====================================================================----
+//     Built-in types
+// ----=====================================================================----
+
 template <typename... T>
 struct TypeList {};
 
-
-
 template <typename T, typename U>
-struct is_member;
+struct IsMember;
 
 template <typename T, typename TH, typename... TL>
-struct is_member<T, TypeList<TH, TL...>>
+struct IsMember<T, TypeList<TH, TL...>>
         : std::conditional<std::is_same<T, TH>::value,
                            std::true_type,
-                           is_member<T, TypeList<TL...>>>::type
+                           IsMember<T, TypeList<TL...>>>::type
 {
 };
 
 template <typename T>
-struct is_member<T, TypeList<>> : std::false_type {};
+struct IsMember<T, TypeList<>> : std::false_type {};
 
 
 
-using builtin_types = TypeList<bool,
-                               char,
-                               signed char,
-                               unsigned char,
-                               short,
-                               unsigned short,
-                               int,
-                               unsigned int,
-                               long,
-                               unsigned long,
-                               long long,
-                               unsigned long long,
-                               float,
-                               double,
-                               long double,
-                               SplitStringView>;
+using BuiltInTypes = TypeList<bool,
+                              char,
+                              signed char,
+                              unsigned char,
+                              short,
+                              unsigned short,
+                              int,
+                              unsigned int,
+                              long,
+                              unsigned long,
+                              long long,
+                              unsigned long long,
+                              float,
+                              double,
+                              long double,
+                              Immutable<const char*>,
+                              SplitStringView>;
 
 template <typename T>
-struct is_builtin : std::integral_constant<
-                        bool,
-                        is_member<std::decay_t<T>, builtin_types>::value
-                        || std::is_pointer<T>::value>
+struct IsBuiltin : std::integral_constant<
+                       bool,
+                       IsMember<std::decay_t<T>, BuiltInTypes>::value
+                       || std::is_pointer<std::decay_t<T>>::value>
 {
 };
 
-
+// ----=====================================================================----
+//     integral_constant inversion
+// ----=====================================================================----
 
 template <typename T>
 struct NotType;
@@ -189,9 +161,11 @@ struct NotType<std::integral_constant<bool, B>>
 };
 
 template <typename T>
-using not_t = typename NotType<T>::type;
+using Not = typename NotType<T>::type;
 
-
+// ----=====================================================================----
+//     ScratchPad
+// ----=====================================================================----
 
 //! A scratch pad.
 class ScratchPad
@@ -219,7 +193,9 @@ private:
     unsigned m_size;
 };
 
-
+// ----=====================================================================----
+//     RecordHeaderGenerator
+// ----=====================================================================----
 
 //! A generator for the header of a log record.
 class RecordHeaderGenerator
@@ -244,6 +220,100 @@ public:
 
     RecordHeaderGenerator* m_next;
 };
+
+// ----=====================================================================----
+//     FormatTuple
+// ----=====================================================================----
+
+template <typename... TArgs>
+struct FormatTuple
+{
+    template <typename... U>
+    explicit
+    FormatTuple(const char* fmt, U&&... args)
+        : format(fmt),
+          args(std::forward<U>(args)...)
+    {
+    }
+
+    const char* format;
+    std::tuple<TArgs...> args;
+};
+
+template <typename TArg, typename... TArgs>
+FormatTuple<TArg&&, TArgs&&...> makeFormatTuple(const char* format,
+                                                TArg&& arg,
+                                                TArgs&&... args)
+{
+    return FormatTuple<TArg&&, TArgs&&...>(
+                format, std::forward<TArg>(arg), std::forward<TArgs>(args)...);
+}
+
+inline
+const char* makeFormatTuple(const char* format)
+{
+    return format;
+}
+
+// ----=====================================================================----
+//     Argument decaying
+// ----=====================================================================----
+
+template <typename T>
+struct IsAtomic : public std::false_type {};
+
+template <typename T>
+struct IsAtomic<std::atomic<T>> : public std::true_type {};
+
+
+template <typename T>
+struct Decayer
+{
+    template <typename U>
+    static constexpr
+    std::decay_t<U> decay(U&& x) noexcept
+    {
+        return std::forward<U>(x);
+    }
+};
+
+template <typename T>
+struct EnumDecayer
+{
+    static constexpr
+    std::underlying_type_t<T> decay(T x) noexcept
+    {
+        return static_cast<std::underlying_type_t<T>>(x);
+    }
+};
+
+template <typename T>
+struct AtomicDecayer;
+
+template <typename T>
+struct AtomicDecayer<std::atomic<T>>
+{
+    static
+    T decay(const std::atomic<T>& x) noexcept
+    {
+        return x.load();
+    }
+};
+
+
+template <typename T>
+using Decayer_t = typename std::conditional_t<
+        std::is_enum<T>::value && (TreatAsInteger<T>::value || std::is_convertible<T, int>::value),
+        EnumDecayer<T>,
+        std::conditional_t<IsAtomic<T>::value,
+                           AtomicDecayer<T>,
+                           Decayer<T>>>;
+
+template <typename T>
+auto decayArgument(T&& x) -> decltype(Decayer_t<std::decay_t<T>>::decay(std::forward<T>(x)))
+{
+    return Decayer_t<std::decay_t<T>>::decay(std::forward<T>(x));
+}
 
 } // namespace log11_detail
 } // namespace log11

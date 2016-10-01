@@ -37,7 +37,7 @@ namespace log11
 
 Logger::Logger(LogCore* core)
     : m_core(core),
-      m_flags(static_cast<unsigned char>(Severity::Info) | 0x80)
+      m_configuration(static_cast<unsigned char>(Severity::Info) | 0x80)
 {
 }
 
@@ -47,16 +47,32 @@ Logger::~Logger()
 
 void Logger::setEnabled(bool enable) noexcept
 {
-    auto flags = m_flags.load() & 0x7F;
+    auto config = m_configuration.load() & 0x7F;
     if (enable)
-        flags |= 0x80;
-    m_flags = flags;
+        config |= 0x80;
+    m_configuration = config;
 }
 
-void Logger::setLevel(Severity severity) noexcept
+bool Logger::isEnabled() const noexcept
 {
-    auto flags = m_flags.load();
-    m_flags = static_cast<unsigned char>(severity) | (flags & 0x80);
+    auto config = m_configuration.load();
+    return (config & 0x80) != 0;
+}
+
+void Logger::setLevel(Severity threshold) noexcept
+{
+    auto config = m_configuration.load();
+    m_configuration = static_cast<unsigned char>(threshold) | (config & 0x80);
+}
+
+Severity Logger::level() const noexcept
+{
+    return static_cast<Severity>(m_configuration.load() & 0x7F);
+}
+
+LogBuffer Logger::logBuffer(Severity severity, std::size_t size)
+{
+    return LogBuffer(m_core, LogCore::ClaimPolicy::Block, severity, size);
 }
 
 } // namespace log11

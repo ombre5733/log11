@@ -27,14 +27,8 @@
 #ifndef LOG11_TYPEINFO_HPP
 #define LOG11_TYPEINFO_HPP
 
-#include "Config.hpp"
-
+#include <cstdint>
 #include <type_traits>
-#include <utility>
-
-#ifdef LOG11_USE_WEOS
-#include <weos/utility.hpp>
-#endif
 
 
 namespace log11
@@ -46,12 +40,12 @@ struct TypeInfo;
 //! The first tag, which can be used for a user-defined type.
 //! All user defined tags must be in the range
 //! <tt>user_defined_type_tag_begin <= tag < user_defined_type_tag_end</tt>.
-static constexpr unsigned user_defined_type_tag_begin = 1024;
+static constexpr std::uint32_t user_defined_type_tag_begin = 1024;
 
 //! The last tag, which cannot be used for a user-defined type anymore.
 //! All user defined tags must be in the range
 //! <tt>user_defined_type_tag_begin <= tag < user_defined_type_tag_end</tt>.
-static constexpr unsigned user_defined_type_tag_end = 4096;
+static constexpr std::uint32_t user_defined_type_tag_end = 4096;
 
 //! \brief A traits class to make enum behave like integers.
 //!
@@ -64,51 +58,34 @@ struct TreatAsInteger : public std::false_type
 
 //! Makes the enum \p e behave like an integer when passed to the logger.
 #define LOG11_TREAT_ENUM_AS_INTEGER(e)                                         \
-    namespace log11 {                                                          \
+    namespace log11                                                            \
+    {                                                                          \
         template <>                                                            \
         struct TreatAsInteger<e> : public std::true_type                       \
         {                                                                      \
         };                                                                     \
     }
 
-
-
-namespace log11_detail
-{
-
-template <typename T>
-struct Decayer
-{
-    template <typename U>
-    static constexpr
-    std::decay_t<U> decay(U&& x) noexcept
-    {
-        return std::forward<U>(x);
+//! Automatically create a serializer for the given \p type.
+#define IO11_AUTO_SERIALIZE(type)                                              \
+    namespace log11                                                            \
+    {                                                                          \
+    template <>                                                                \
+    struct TypeInfo<type>                                                      \
+    {                                                                          \
+        static                                                                 \
+        std::uint32_t typeTag();                                               \
+        static                                                                 \
+        void write(::log11::BinaryStream& s, const type& v);                   \
+    };                                                                         \
     }
-};
+
+
 
 template <typename T>
-struct EnumDecayer
+struct _io11_AutoSerialize
 {
-    static constexpr
-    std::underlying_type_t<T> decay(T x) noexcept
-    {
-        return static_cast<std::underlying_type_t<T>>(x);
-    }
 };
-
-template <typename T>
-using Decayer_t = typename std::conditional_t<std::is_enum<T>::value && TreatAsInteger<T>::value,
-                                              EnumDecayer<T>,
-                                              Decayer<T>>;
-
-template <typename T>
-auto decayArgument(T&& x) -> decltype(Decayer_t<std::decay_t<T>>::decay(std::forward<T>(x)))
-{
-    return Decayer_t<std::decay_t<T>>::decay(std::forward<T>(x));
-}
-
-} // namespace log11_detail
 
 } // namespace log11
 

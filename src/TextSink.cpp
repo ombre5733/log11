@@ -29,20 +29,13 @@
 using namespace log11;
 
 
-TextSink::~TextSink()
-{
-}
-
-void TextSink::beginLogEntry(const LogRecordData& /*data*/)
-{
-}
-
-void TextSink::endLogEntry()
-{
-}
-
-void TextSink::putString(const char* text, std::size_t size)
+void TextSink::writeString(const char* text, std::size_t size)
 {
     while (size--)
-        putChar(*text++);
+        writeChar(*text++);
+}
+
+void TextSink::writeHeader(const char* header, std::size_t size)
+{
+    writeString(header, size);
 }

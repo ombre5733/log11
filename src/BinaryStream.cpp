@@ -39,7 +39,8 @@ namespace log11
 //     BinaryStream
 // ----=====================================================================----
 
-BinaryStream::BinaryStream(BinarySinkBase& sink, log11_detail::SerdesOptions& opt)
+BinaryStream::BinaryStream(BinarySinkBase& sink,
+                           log11_detail::SerdesOptions& opt)
     : m_sink(&sink)
     , m_options(opt)
 {
@@ -49,137 +50,118 @@ BinaryStream::BinaryStream(BinarySinkBase& sink, log11_detail::SerdesOptions& op
 //     Bool & char output
 // -----------------------------------------------------------------------------
 
-BinaryStream& BinaryStream::operator<<(bool value)
+void BinaryStream::write(bool value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(char ch)
+void BinaryStream::write(char ch)
 {
     m_sink->write(ch);
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     Integer output
 // -----------------------------------------------------------------------------
 
-BinaryStream& BinaryStream::operator<<(signed char value)
+void BinaryStream::write(signed char value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(unsigned char value)
+void BinaryStream::write(unsigned char value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(short value)
+void BinaryStream::write(short value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(unsigned short value)
+void BinaryStream::write(unsigned short value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(int value)
+void BinaryStream::write(int value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(unsigned int value)
+void BinaryStream::write(unsigned int value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(long value)
+void BinaryStream::write(long value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(unsigned long value)
+void BinaryStream::write(unsigned long value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(long long value)
+void BinaryStream::write(long long value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(unsigned long long value)
+void BinaryStream::write(unsigned long long value)
 {
     m_sink->write(value);
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     Floating point output
 // -----------------------------------------------------------------------------
 
-BinaryStream& BinaryStream::operator<<(float value)
+void BinaryStream::write(float value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(double value)
+void BinaryStream::write(double value)
 {
     m_sink->write(value);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(long double value)
+void BinaryStream::write(long double value)
 {
     m_sink->write(value);
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     Pointer output
 // -----------------------------------------------------------------------------
 
-BinaryStream& BinaryStream::operator<<(const void* value)
+void BinaryStream::write(const void* value)
 {
     m_sink->write(value);
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     String output
 // -----------------------------------------------------------------------------
 
-BinaryStream& BinaryStream::operator<<(const char* str)
+void BinaryStream::write(const char* str)
 {
     if (m_options.isImmutable(str))
         m_sink->write(Immutable<const char*>(str), m_options.immutableStringBegin);
     else
         m_sink->write(SplitStringView{str, str ? strlen(str) : 0, nullptr, 0});
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(Immutable<const char*> str)
+void BinaryStream::write(Immutable<const char*> str)
 {
     m_sink->write(str, m_options.immutableStringBegin);
-    return *this;
 }
 
-BinaryStream& BinaryStream::operator<<(const SplitStringView& str)
+void BinaryStream::write(const SplitStringView& str)
 {
     m_sink->write(str);
-    return *this;
 }
 
 } // namespace log11

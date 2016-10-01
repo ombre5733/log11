@@ -26,7 +26,6 @@
 
 #include "LogCore.hpp"
 #include "BinarySink.hpp"
-#include "String.hpp"
 #include "TextSink.hpp"
 #include "Utility.hpp"
 
@@ -46,7 +45,7 @@ namespace log11_detail
 template <typename T, typename... TArgs>
 void prepareSerializer(TypeList<T, TArgs...>)
 {
-    Serdes<T>::instance();
+    serdes_t<T>::instance();
     prepareSerializer(TypeList<TArgs...>());
 }
 
@@ -54,6 +53,7 @@ void prepareSerializer(TypeList<>)
 {
     ImmutableCharStarSerdes::instance();
     MutableCharStarSerdes::instance();
+    FormatTupleSerdes::instance();
 }
 
 } // namespace log11_detail
@@ -78,9 +78,9 @@ LogCore::LogCore(std::size_t bufferSize)
     , m_textSink(nullptr)
     , m_headerGenerator(nullptr)
 {
-    log11_detail::prepareSerializer(log11_detail::builtin_types());
+    log11_detail::prepareSerializer(log11_detail::BuiltInTypes());
 
-    m_headerGenerator = RecordHeaderGenerator::parse("[{D} {H}:{M}:{S}.{us} {L}] ");
+    m_headerGenerator = RecordHeaderGenerator::parse("[{D}d {H}:{M}:{S}.{us} {L}] ");
 
 #ifdef LOG11_USE_WEOS
     weos::thread(attrs, &LogCore::consumeFifoEntries, this).detach();
@@ -150,6 +150,49 @@ void LogCore::setImmutableStringSpace(
     m_messageFifo.publish(claimed);
 }
 
+void LogCore::setTextHeader(const char* header)
+{
+    auto* generator = RecordHeaderGenerator::parse(header);
+    if (m_headerGenerator)
+        delete m_headerGenerator;
+    m_headerGenerator = generator;
+}
+
+// ----=====================================================================----
+//     Private methods
+// ----=====================================================================----
+
+void LogCore::writeRecordHeader(RingBuffer::Stream& stream,
+                                Directive directive)
+{
+    stream.write(directive);
+    auto durationSinceEpoche
+            = chrono::high_resolution_clock::now().time_since_epoch().count();
+    stream.write(&durationSinceEpoche, sizeof(durationSinceEpoche));
+}
+
+RingBuffer::Block LogCore::claim(ClaimPolicy policy, std::size_t argumentSize)
+{
+    // We cannot rely on the serdes options if a change is going on.
+    if (m_crossThreadChangeOngoing)
+    {
+        if (policy != Block)
+            return RingBuffer::Block();
+        m_crossThreadChangeDone.expect(m_crossThreadChangeOngoing, false);
+    }
+
+    auto totalSize = argumentSize + headerSize;
+    RingBuffer::Block claimed;
+    switch (policy)
+    {
+    case Block:    claimed = m_messageFifo.claim(totalSize); break;
+    case Truncate: claimed = m_messageFifo.tryClaim(headerSize, totalSize); break;
+    case Discard:  claimed = m_messageFifo.tryClaim(totalSize, totalSize); break;
+    }
+
+    return claimed;
+}
+
 void LogCore::consumeFifoEntries()
 {
     using namespace std::chrono;
@@ -187,20 +230,22 @@ void LogCore::consumeFifoEntries()
         if (directive.isCommand)
         {
             auto command = static_cast<Directive::Command>(directive.severityOrCommand);
+            if (command == Directive::Skip)
+                continue;
             if (command == Directive::SetImmutableSpace)
             {
                 stream.read(&m_serdesOptions.immutableStringBegin, sizeof(uintptr_t));
                 stream.read(&m_serdesOptions.immutableStringEnd, sizeof(uintptr_t));
             }
-            if (command == Directive::SetBinarySink
-                    || command == Directive::SetBothSinks)
+            if (   command == Directive::SetBinarySink
+                || command == Directive::SetBothSinks)
             {
                 BinarySinkBase* sink;
                 if (stream.read(&sink, sizeof(BinarySinkBase*)))
                     m_binarySink = sink;
             }
-            if (command == Directive::SetTextSink
-                    || command == Directive::SetBothSinks)
+            if (   command == Directive::SetTextSink
+                || command == Directive::SetBothSinks)
             {
                 TextSink* sink;
                 if (stream.read(&sink, sizeof(TextSink*)))
@@ -231,19 +276,26 @@ void LogCore::consumeFifoEntries()
         if (m_binarySink)
         {
             m_binarySink->beginLogEntry(record);
-            writeBinary(m_binarySink, stream);
-            m_binarySink->endLogEntry();
+            writeToBinary(stream);
+            m_binarySink->endLogEntry(record);
         }
 
         // Write the entry to the text sink.
         if (m_textSink)
         {
             m_scratchPad.clear();
-            m_headerGenerator->generate(record, m_scratchPad);
             m_textSink->beginLogEntry(record);
-            m_textSink->putString(m_scratchPad.data(), m_scratchPad.size());
-            writeText(m_textSink, stream);
-            m_textSink->endLogEntry();
+            if (m_headerGenerator)
+            {
+                m_headerGenerator->generate(record, m_scratchPad);
+                m_textSink->writeHeader(m_scratchPad.data(), m_scratchPad.size());
+            }
+            else
+            {
+                m_textSink->writeHeader("", 0);
+            }
+            writeToText(stream);
+            m_textSink->endLogEntry(record);
         }
     }
 
@@ -252,110 +304,26 @@ void LogCore::consumeFifoEntries()
     m_consumerThreadCv.notify_one();
 }
 
-void LogCore::writeText(TextSink* sink, RingBuffer::Stream inStream)
+void LogCore::writeToText(RingBuffer::Stream inStream)
 {
-    const char* format;
-    if (!inStream.read(&format, sizeof(const char*)))
-        return;
-
-    SplitStringView str{format, strlen(format), nullptr, 0};
-
-    TextStream outStream(*sink);
-    unsigned argCounter = 0;
-    const char* iter = str.begin1;
-    const char* marker = str.begin1;
-    const char* end = str.begin1 + str.length1;
-    for (;; ++iter)
+    TextStream outStream(*m_textSink, m_scratchPad);
+    for (;;)
     {
-        // Loop to the start of the format specifier (or the end of the string).
-        if (iter == end)
-        {
-            if (iter != marker)
-                sink->putString(marker, iter - marker);
-            marker = iter = str.begin2;
-            end = str.begin2 + str.length2;
-            str.length2 = 0;
-            if (iter == end)
-                break;
-        }
-        if (*iter != '{')
-            continue;
-
-        if (iter != marker)
-            sink->putString(marker, iter - marker);
-
-        m_scratchPad.clear();
-        // Loop to the end of the format specifier (or the end of the string).
-        marker = iter + 1;
-        while (*iter != '}')
-        {
-            ++iter;
-            if (iter == end)
-            {
-                if (iter != marker)
-                    m_scratchPad.push(marker, iter - marker);
-                marker = iter = str.begin2;
-                end = str.begin2 + str.length2;
-                str.length2 = 0;
-                if (iter == end)
-                    break;
-            }
-        }
-        if (iter == end)
-            break;
-
-        if (iter != marker)
-            m_scratchPad.push(marker, iter - marker);
-
-        if (m_scratchPad.size())
-        {
-            m_scratchPad.push('\0');
-            outStream.parseFormatString(m_scratchPad.data());
-        }
-
-        // TODO:
-        // if (argCounter != argument.from.format.spec)
-        // skipToArgument()
-
-
-        log11_detail::SerdesBase* serdes;
-        if (!inStream.read(&serdes, sizeof(void*))
-            || !serdes
-            || !serdes->deserialize(inStream, outStream))
-        {
-            sink->putString("<?>", 3);
-        }
-
-        ++argCounter;
-        marker = iter + 1;
-    }
-    if (iter != marker)
-        sink->putString(marker, iter - marker);
-
-    log11_detail::SerdesBase* serdes;
-    while (inStream.read(&serdes, sizeof(void*)) && serdes)
-    {
-        sink->putString(" <", 2);
-        bool result = serdes->deserialize(inStream, outStream);
-        sink->putChar('>');
-        if (!result)
-            break;
+        SerdesBase* serdes;
+        if (!inStream.read(&serdes, sizeof(void*)) || !serdes)
+            return;
+        serdes->deserialize(inStream, outStream);
     }
 }
 
-void LogCore::writeBinary(BinarySinkBase* sink, RingBuffer::Stream inStream)
+void LogCore::writeToBinary(RingBuffer::Stream inStream)
 {
-    BinaryStream outStream(*sink, m_serdesOptions);
-    const char* format;
-    if (!inStream.read(&format, sizeof(const char*)))
-        return;
-    outStream << format;
-
+    BinaryStream outStream(*m_binarySink, m_serdesOptions);
     for (;;)
     {
-        log11_detail::SerdesBase* serdes;
+        SerdesBase* serdes;
         if (!inStream.read(&serdes, sizeof(void*)) || !serdes)
-            break;
+            return;
         serdes->deserialize(inStream, outStream);
     }
 }

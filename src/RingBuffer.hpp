@@ -27,12 +27,11 @@
 #ifndef LOG11_RINGBUFFER_HPP
 #define LOG11_RINGBUFFER_HPP
 
-#include "String.hpp"
 #include "Synchronic.hpp"
+#include "Utility.hpp"
 
 #include <atomic>
 #include <cstdint>
-#include <condition_variable>
 #include <utility>
 
 
@@ -47,7 +46,14 @@ public:
     class Stream
     {
     public:
+        Stream() = default;
+
         Stream(RingBuffer& buffer, unsigned begin, unsigned length) noexcept;
+
+        unsigned begin() noexcept
+        {
+            return m_begin;
+        }
 
         byte peek() noexcept;
 
@@ -60,17 +66,19 @@ public:
         bool writeString(const void* source, unsigned size) noexcept;
 
         template <typename T>
-        std::enable_if_t<(sizeof(T) > 1), bool> write(T value) noexcept
+        std::enable_if_t<(sizeof(T) > 1), bool>
+        write(T value) noexcept
         {
             return write(&value, sizeof(T));
         }
 
         template <typename T>
-        std::enable_if_t<sizeof(T) == 1, bool> write(T data) noexcept
+        std::enable_if_t<sizeof(T) == 1, bool>
+        write(T data) noexcept
         {
             if (m_length)
             {
-                *static_cast<T*>(m_buffer.data(m_begin)) = data;
+                *static_cast<T*>(m_buffer->data(m_begin)) = data;
                 ++m_begin;
                 --m_length;
                 return true;
@@ -81,10 +89,14 @@ public:
             }
         }
 
+        void skip(unsigned size) noexcept;
+
+        void limit(unsigned size) noexcept;
+
         void zeroFill() noexcept;
 
     private:
-        RingBuffer& m_buffer;
+        RingBuffer* m_buffer;
         unsigned m_begin;
         unsigned m_length;
     };
@@ -94,7 +106,7 @@ public:
         static constexpr unsigned header_size = 2;
 
     public:
-        Block() = default;
+        Block();
 
         constexpr
         Block(unsigned b, unsigned l) noexcept
@@ -116,17 +128,6 @@ public:
         unsigned m_length;
 
         friend class RingBuffer;
-    };
-
-    struct Slice
-    {
-        Slice(void* p, unsigned l)
-            : pointer(p), length(l)
-        {
-        }
-
-        void* pointer;
-        unsigned length;
     };
 
 

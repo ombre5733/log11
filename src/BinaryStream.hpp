@@ -48,9 +48,12 @@ class SplitStringView;
 template <typename T>
 struct TypeInfo;
 
+
 namespace log11_detail
 {
+class FormatTupleSerdes;
 class SerdesOptions;
+class TupleSerdes;
 
 template <typename T>
 class Serdes;
@@ -61,27 +64,27 @@ template <typename T>
 struct NoTypeTagGetterDefined;
 
 template <typename T>
-struct try_get_tagid_from_typeinfo
+struct try_get_typetag_from_typeinfo
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(log11::TypeInfo<U>::tag(), std::true_type());
+        -> decltype(log11::TypeInfo<U>::typeTag(), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using can_call = decltype(test<T>(0));
+    using can_call = decltype(test<T>(nullptr));
 
     template <typename U>
     static
     std::uint32_t get(can_call)
     {
-        return log11::TypeInfo<T>::tag();
+        return log11::TypeInfo<T>::typeTag();
     }
 
     template <typename U>
     static
-    std::uint32_t get(not_t<can_call>)
+    std::uint32_t get(Not<can_call>)
     {
         NoTypeTagGetterDefined<T> dummy;
         ((void)dummy);
@@ -105,18 +108,18 @@ struct try_typeinfo_binarystream_write
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using can_call = decltype(test<T>(0));
+    using can_call = decltype(test<T>(nullptr));
 
     template <typename U>
     static
     void f(log11::BinaryStream& stream, U&& value, can_call)
     {
-        log11::TypeInfo<T>::write(stream, value);
+        log11::TypeInfo<T>::write(stream, std::forward<U>(value));
     }
 
     template <typename U>
     static
-    void f(log11::BinaryStream&, U&&, not_t<can_call>)
+    void f(log11::BinaryStream&, U&&, Not<can_call>)
     {
         NoBinaryStreamOutputFunctionDefined<T> dummy;
         (void)dummy;
@@ -134,62 +137,83 @@ public:
     BinaryStream(const BinaryStream&) = delete;
     BinaryStream& operator=(const BinaryStream&) = delete;
 
-    //TODO: BinaryStream(BinaryStream&& rhs);
-    //TODO: BinaryStream& operator=(BinaryStream&& rhs);
+    //! \brief Outputs a value.
+    //!
+    //! Outputs the \p value and returns a reference to this stream.
+    template <typename T>
+    BinaryStream& operator<<(T&& value)
+    {
+        write(std::forward<T>(value));
+        return *this;
+    }
 
-    BinaryStream& operator<<(bool value);
 
-    BinaryStream& operator<<(char ch);
+    void write(bool value);
 
-    BinaryStream& operator<<(signed char value);
-    BinaryStream& operator<<(unsigned char value);
-    BinaryStream& operator<<(short value);
-    BinaryStream& operator<<(unsigned short value);
-    BinaryStream& operator<<(int value);
-    BinaryStream& operator<<(unsigned int value);
-    BinaryStream& operator<<(long value);
-    BinaryStream& operator<<(unsigned long value);
-    BinaryStream& operator<<(long long value);
-    BinaryStream& operator<<(unsigned long long value);
+    void write(char ch);
 
-    BinaryStream& operator<<(float value);
-    BinaryStream& operator<<(double value);
-    BinaryStream& operator<<(long double value);
+    void write(signed char value);
+    void write(unsigned char value);
+    void write(short value);
+    void write(unsigned short value);
+    void write(int value);
+    void write(unsigned int value);
+    void write(long value);
+    void write(unsigned long value);
+    void write(long long value);
+    void write(unsigned long long value);
 
-    BinaryStream& operator<<(const void* value);
+    void write(float value);
+    void write(double value);
+    void write(long double value);
 
-    BinaryStream& operator<<(const char* str);
-    BinaryStream& operator<<(Immutable<const char*> str);
-    BinaryStream& operator<<(const SplitStringView& str);
+    void write(const void* value);
 
-    template <typename T,
-              typename = std::enable_if_t<!log11_detail::is_builtin<T>::value>>
-    BinaryStream& operator<<(T&& value);
+    void write(const char* str);
+    void write(Immutable<const char*> str);
+    void write(const SplitStringView& str);
 
-    void writeSignedEnum(std::uint32_t tag, long long value);
-    void writeUnsignedEnum(std::uint32_t tag, unsigned long long value);
+
+    //! \brief Outputs a struct.
+    //!
+    //! Outputs the struct \p value.
+    template <typename T>
+    std::enable_if_t<!log11_detail::IsBuiltin<T>::value
+                     && std::is_class<std::decay_t<T>>::value>
+    write(T&& value)
+    {
+        std::uint32_t tag = log11_detail::try_get_typetag_from_typeinfo<
+                std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
+        m_sink->beginStruct(tag);
+        log11_detail::try_typeinfo_binarystream_write<std::decay_t<T>>::f(
+            *this, std::forward<T>(value), std::true_type());
+        m_sink->endStruct(tag);
+    }
+
+    //! \brief Outputs an enum.
+    //!
+    //! Outputs the enum \p value.
+    template <typename T>
+    std::enable_if_t<!log11_detail::IsBuiltin<T>::value
+                     && std::is_enum<std::decay_t<T>>::value>
+    write(T&& value)
+    {
+        std::uint32_t tag = log11_detail::try_get_typetag_from_typeinfo<
+                std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
+        m_sink->writeEnum(tag, static_cast<std::int64_t>(value));
+    }
 
 private:
     BinarySinkBase* m_sink;
     log11_detail::SerdesOptions& m_options;
 
 
-    template <typename T>
-    friend class log11_detail::Serdes;
+    friend
+    class log11_detail::FormatTupleSerdes;
+
+    friend
+    class log11_detail::TupleSerdes;
 };
-
-template <typename T, typename>
-BinaryStream& BinaryStream::operator<<(T&& value)
-{
-    std::uint32_t tag = log11_detail::try_get_tagid_from_typeinfo<
-            std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
-    m_sink->beginStruct(tag);
-    log11_detail::try_typeinfo_binarystream_write<std::decay_t<T>>::f(
-        *this, std::forward<T>(value), std::true_type());
-    m_sink->endStruct(tag);
-
-    return *this;
-}
 
 } // namespace log11
 

@@ -25,7 +25,7 @@
 *******************************************************************************/
 
 #include "TextStream.hpp"
-#include "String.hpp"
+#include "Serdes.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -50,16 +50,49 @@ TextForwarderSink::TextForwarderSink(TextStream& printer)
 {
 }
 
-void TextForwarderSink::putChar(char ch)
+void TextForwarderSink::writeChar(char ch)
 {
-    m_stream.m_sink->putChar(ch);
+    m_stream.m_sink->writeChar(ch);
     ++m_numCharacters;
 }
 
-void TextForwarderSink::putString(const char* str, std::size_t size)
+void TextForwarderSink::writeString(const char* str, std::size_t size)
 {
-    m_stream.m_sink->putString(str, size);
+    m_stream.m_sink->writeString(str, size);
     m_numCharacters += size;
+}
+
+} // namespace log11_detail
+
+// ----=====================================================================----
+//     ArgumentForwarder
+// ----=====================================================================----
+
+namespace log11_detail
+{
+
+void ArgumentForwarder<RingBuffer::Stream>::printNext()
+{
+    log11_detail::SerdesBase* serdes;
+    if (!m_inStream.read(&serdes, sizeof(void*))
+        || !serdes
+        || !serdes->deserialize(m_inStream, m_outStream))
+    {
+        // TODO: sink->putString("<?>", 3);
+    }
+}
+
+void ArgumentForwarder<RingBuffer::Stream>::printRest()
+{
+    log11_detail::SerdesBase* serdes;
+    while (m_inStream.read(&serdes, sizeof(void*)) && serdes)
+    {
+        m_outStream << ' ' << '<';
+        bool result = serdes->deserialize(m_inStream, m_outStream);
+        m_outStream << '>';
+        if (!result)
+            break;
+    }
 }
 
 } // namespace log11_detail
@@ -161,8 +194,9 @@ const char* TextStream::Format::parse(const char* str)
 //     TextStream
 // ----=====================================================================----
 
-TextStream::TextStream(TextSink& sink)
-    : m_sink(&sink)
+TextStream::TextStream(TextSink& sink, log11_detail::ScratchPad& scratchPad)
+    : m_sink(&sink),
+      m_scratchPad(scratchPad)
 {
 }
 
@@ -170,7 +204,7 @@ TextStream::TextStream(TextSink& sink)
 //     Bool & char printing
 // -----------------------------------------------------------------------------
 
-TextStream& TextStream::operator<<(bool value)
+void TextStream::write(bool value)
 {
     if (m_format.align == Format::AutoAlign)
         m_format.align = Format::Left;
@@ -178,196 +212,176 @@ TextStream& TextStream::operator<<(bool value)
     int padding = m_format.minWidth - (value ? 4 : 5);
     padding = printPrePaddingAndSign(padding, false, Format::NoType);
     if (value)
-        m_sink->putString("true", 4);
+        m_sink->writeString("true", 4);
     else
-        m_sink->putString("false", 5);
+        m_sink->writeString("false", 5);
     printPostPadding(padding);
 
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(char ch)
+void TextStream::write(char ch)
 {
     if (m_format.align == Format::AutoAlign)
         m_format.align = Format::Left;
 
     int padding = m_format.minWidth - 1;
     padding = printPrePaddingAndSign(padding, false, Format::NoType);
-    m_sink->putChar(ch);
+    m_sink->writeChar(ch);
     printPostPadding(padding);
     reset();
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     Integer printing
 // -----------------------------------------------------------------------------
 
-TextStream& TextStream::operator<<(signed char value)
+void TextStream::write(signed char value)
 {
     if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(unsigned char value)
+void TextStream::write(unsigned char value)
 {
     printInteger(value, false);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(short value)
+void TextStream::write(short value)
 {
     if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(unsigned short value)
+void TextStream::write(unsigned short value)
 {
     printInteger(value, false);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(int value)
+void TextStream::write(int value)
 {
     if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(unsigned int value)
+void TextStream::write(unsigned int value)
 {
     printInteger(value, false);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(long value)
+void TextStream::write(long value)
 {
     if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(unsigned long value)
+void TextStream::write(unsigned long value)
 {
     printInteger(value, false);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(long long value)
+void TextStream::write(long long value)
 {
     if (value >= 0)
         printInteger(value, false);
     else
         printInteger(-static_cast<max_int_type>(value), true);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(unsigned long long value)
+void TextStream::write(unsigned long long value)
 {
     printInteger(value, false);
     reset();
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     Floating point printing
 // -----------------------------------------------------------------------------
 
-TextStream& TextStream::operator<<(float value)
+void TextStream::write(float value)
 {
     printFloat(value);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(double value)
+void TextStream::write(double value)
 {
     printFloat(value);
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(long double value)
+void TextStream::write(long double value)
 {
     printFloat(value);
     reset();
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     Pointer printing
 // -----------------------------------------------------------------------------
 
-TextStream& TextStream::operator<<(const void* value)
+void TextStream::write(const void* value)
 {
     if (m_format.align == Format::AutoAlign)
         m_format.align = Format::Right;
     int padding = m_format.minWidth - 2 - 2 * sizeof(void*);
     padding = printPrePaddingAndSign(padding, false, Format::NoType);
 
-    m_sink->putString("0x", 2);
+    m_sink->writeString("0x", 2);
     printIntegerDigits<16>(uintptr_t(value), uintptr_t(1) << (sizeof(void*) * 8 - 4));
 
     printPostPadding(padding);
     reset();
-    return *this;
 }
 
 // -----------------------------------------------------------------------------
 //     String printing
 // -----------------------------------------------------------------------------
 
-TextStream& TextStream::operator<<(const char* str)
+void TextStream::write(const char* str)
 {
     // TODO: padding
 
-    m_sink->putString(str, std::strlen(str));
+    m_sink->writeString(str, std::strlen(str));
     reset();
-    return *this;
 }
 
-TextStream& TextStream::operator<<(const SplitStringView& str)
+void TextStream::write(Immutable<const char*> str)
+{
+    write(str.get());
+}
+
+void TextStream::write(const SplitStringView& str)
 {
     // TODO: padding
 
     if (str.length1)
-        m_sink->putString(str.begin1, str.length1);
+        m_sink->writeString(str.begin1, str.length1);
     if (str.length2)
-        m_sink->putString(str.begin2, str.length2);
+        m_sink->writeString(str.begin2, str.length2);
     reset();
-    return *this;
 }
 
 // ----=====================================================================----
 //     Private methods
 // ----=====================================================================----
-
-void TextStream::printArgument(unsigned)
-{
-    // TODO: Padding
-
-    m_sink->putString("<?>", 3);
-}
 
 void TextStream::reset()
 {
@@ -395,9 +409,9 @@ void TextStream::printIntegerDigits(max_int_type value, max_int_type divisor)
     {
         unsigned char digit = value / divisor;
         if (TBase <= 10)
-            m_sink->putChar('0' + digit);
+            m_sink->writeChar('0' + digit);
         else
-            m_sink->putChar(digit < 10 ? '0' + digit
+            m_sink->writeChar(digit < 10 ? '0' + digit
                                        : (m_format.upperCase ? 'A'- 10 + digit
                                                              : 'a'- 10 + digit));
         value -= digit * divisor;
@@ -466,8 +480,8 @@ void TextStream::printFloat(double value)
                     klass == FP_INFINITE && isNegative, Format::NoType);
         switch (klass)
         {
-        case FP_NAN:      m_sink->putString("nan", 3); break;
-        case FP_INFINITE: m_sink->putString("inf", 3); break;
+        case FP_NAN:      m_sink->writeString("nan", 3); break;
+        case FP_INFINITE: m_sink->writeString("inf", 3); break;
         }
         printPostPadding(padding);
         return;
@@ -563,22 +577,22 @@ void TextStream::printFloat(double value)
 
     if (m_format.precision)
     {
-        m_sink->putChar('.');
+        m_sink->writeChar('.');
         printIntegerDigits<10>(fraction, fractionDivisor ? fractionDivisor : 1);
     }
     else if (m_format.alternateForm)
-        m_sink->putChar('.');
+        m_sink->writeChar('.');
 
     if (m_format.type == Format::Exponent)
     {
-         m_sink->putChar(m_format.upperCase ? 'E' : 'e');
+         m_sink->writeChar(m_format.upperCase ? 'E' : 'e');
          if (exponent >= 0)
          {
-             m_sink->putChar('+');
+             m_sink->writeChar('+');
          }
          else
          {
-             m_sink->putChar('-');
+             m_sink->writeChar('-');
              exponent = -exponent;
          }
          printIntegerDigits<10>(exponent, 10);
@@ -598,35 +612,35 @@ int TextStream::printPrePaddingAndSign(
     if (m_format.align == Format::Right)
     {
         while (padding-- > 0)
-            m_sink->putChar(m_format.fill);
+            m_sink->writeChar(m_format.fill);
     }
     else if (m_format.align == Format::Centered)
     {
         for (int count = 0; count < (padding + 1) / 2; ++count)
-            m_sink->putChar(m_format.fill);
+            m_sink->writeChar(m_format.fill);
         padding /= 2;
     }
 
     if (isNegative)
-        m_sink->putChar('-');
+        m_sink->writeChar('-');
     else if (m_format.sign == Format::SpaceForPositive)
-        m_sink->putChar(' ');
+        m_sink->writeChar(' ');
     else if (m_format.sign == Format::Always)
-        m_sink->putChar('+');
+        m_sink->writeChar('+');
 
     switch (prefix)
     {
     default:
     case Format::NoType:  break;
-    case Format::Binary:  m_sink->putString("0b", 2); break;
-    case Format::Decimal: m_sink->putString("0d", 2); break;
-    case Format::Octal:   m_sink->putString("0o", 2); break;
-    case Format::Hex:     m_sink->putString("0x", 2); break;
+    case Format::Binary:  m_sink->writeString("0b", 2); break;
+    case Format::Decimal: m_sink->writeString("0d", 2); break;
+    case Format::Octal:   m_sink->writeString("0o", 2); break;
+    case Format::Hex:     m_sink->writeString("0x", 2); break;
     }
 
     if (m_format.align == Format::AlignAfterSign)
         while (padding-- > 0)
-            m_sink->putChar(m_format.fill);
+            m_sink->writeChar(m_format.fill);
 
     return padding;
 }
@@ -635,7 +649,7 @@ void TextStream::printPostPadding(int padding)
 {
     if (m_format.align == Format::Left || m_format.align == Format::Centered)
         while (padding-- > 0)
-            m_sink->putChar(m_format.fill);
+            m_sink->writeChar(m_format.fill);
 }
 
 } // namespace log11

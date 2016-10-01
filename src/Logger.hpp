@@ -28,27 +28,19 @@
 #define LOG11_LOGGER_HPP
 
 #include "Config.hpp"
+#include "LogBuffer.hpp"
 #include "LogCore.hpp"
 #include "Severity.hpp"
 #include "TypeInfo.hpp"
+#include "Utility.hpp"
+
+#ifdef LOG11_USE_WEOS
+#include <weos/utility.hpp>
+#endif // LOG11_USE_WEOS
 
 
 namespace log11
 {
-
-//! A tag type for log entries which may be discarded.
-struct may_discard_t {};
-//! A tag type for log entries which may be truncated.
-struct may_truncate_or_discard_t {};
-
-//! This tag specifies that a log entry may be discarded if the FIFO is full.
-//! The message will either be logged as a whole or discarded.
-constexpr may_discard_t may_discard = may_discard_t();
-
-//! This tag specifies that a log entry may be truncated or discarded
-//! if there is no sufficient space in the FIFO.
-constexpr may_truncate_or_discard_t may_truncate_or_discard = may_truncate_or_discard_t();
-
 
 //! \brief A logger.
 //!
@@ -74,16 +66,30 @@ public:
     //! Destroys the logger.
     ~Logger();
 
+    // Configuration
+
     //! \brief Enables or disables the logger.
     //!
-    //! If \p enable is set, the logger is enabled.
+    //! If \p enable is set, the logger is enabled. By default, the logger is
+    //! enabled.
     void setEnabled(bool enable) noexcept;
+
+    //! \brief Checks if the sink is enabled.
+    //!
+    //! Returns \p true, if the sink is enabled.
+    bool isEnabled() const noexcept;
 
     //! \brief Sets the logging level.
     //!
     //! Sets the logging level to the given \p threshold. Log messages with
-    //! a severity lower than the threshold are discarded.
+    //! a severity lower than the threshold are discarded. By default, the
+    //! threshold is set to Severity::Info.
     void setLevel(Severity threshold) noexcept;
+
+    //! \brief Returns the logging level.
+    Severity level() const noexcept;
+
+
 
     //! If the level of this logger is lower or equal to the \p severity of
     //! the message, a new log entry is created by interpolating the
@@ -93,13 +99,28 @@ public:
     template <typename... TArgs>
     void log(Severity severity, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && severity >= Severity(flags & 0x7F))
+        if (canLog(severity))
         {
             m_core->log(LogCore::ClaimPolicy::Block, severity,
-                        message, log11_detail::decayArgument(args)...);
+                        log11_detail::makeFormatTuple(
+                            message, log11_detail::decayArgument(args)...));
         }
     }
+
+    template <typename TArg, typename... TArgs>
+    void logRaw(Severity severity, TArg&& arg, TArgs&&... args)
+    {
+        if (canLog(severity))
+        {
+            m_core->log(LogCore::ClaimPolicy::Block, severity,
+                        log11_detail::decayArgument(arg),
+                        log11_detail::decayArgument(args)...);
+        }
+    }
+
+    LogBuffer logBuffer(Severity severity, std::size_t size);
+
+
 
     //! If the level of this logger is lower or equal to the \p severity of
     //! the message, a new log entry is created by interpolating the
@@ -111,11 +132,11 @@ public:
     void log(may_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && severity >= Severity(flags & 0x7F))
+        if (canLog(severity))
         {
             m_core->log(LogCore::ClaimPolicy::Discard, severity,
-                        message, log11_detail::decayArgument(args)...);
+                        log11_detail::makeFormatTuple(
+                            message, log11_detail::decayArgument(args)...));
         }
     }
 
@@ -129,11 +150,11 @@ public:
     void log(may_truncate_or_discard_t, Severity severity, const char* message,
              TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && severity >= Severity(flags & 0x7F))
+        if (canLog(severity))
         {
             m_core->log(LogCore::ClaimPolicy::Truncate, severity,
-                        message, log11_detail::decayArgument(args)...);
+                        log11_detail::makeFormatTuple(
+                            message, log11_detail::decayArgument(args)...));
         }
     }
 
@@ -156,12 +177,7 @@ public:
     template <typename... TArgs>
     void trace(const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Trace >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Block, Severity::Trace,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(Severity::Trace, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for trace log entries.
@@ -173,12 +189,8 @@ public:
     template <typename... TArgs>
     void trace(may_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Trace >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Trace,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_discard, Severity::Trace,
+                  message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for trace log entries.
@@ -190,12 +202,8 @@ public:
     template <typename... TArgs>
     void trace(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Trace >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Trace,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_truncate_or_discard, Severity::Trace,
+                  message, std::forward<TArgs>(args)...);
     }
 
     // //! \brief A convenience function for trace streams.
@@ -220,12 +228,7 @@ public:
     template <typename... TArgs>
     void debug(const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Debug >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Block, Severity::Debug,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(Severity::Debug, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for debug log entries.
@@ -237,12 +240,8 @@ public:
     template <typename... TArgs>
     void debug(may_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Debug >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Debug,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_discard, Severity::Debug,
+                  message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for debug log entries.
@@ -254,12 +253,8 @@ public:
     template <typename... TArgs>
     void debug(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Debug >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Debug,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_truncate_or_discard, Severity::Debug,
+                  message, std::forward<TArgs>(args)...);
     }
 
     // //! \brief A convenience function for debug streams.
@@ -284,12 +279,7 @@ public:
     template <typename... TArgs>
     void info(const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Info >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Block, Severity::Info,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(Severity::Info, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for info log entries.
@@ -301,12 +291,8 @@ public:
     template <typename... TArgs>
     void info(may_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Info >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Info,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_discard, Severity::Info,
+                  message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for info log entries.
@@ -318,12 +304,8 @@ public:
     template <typename... TArgs>
     void info(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Info >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Info,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_truncate_or_discard, Severity::Info,
+                  message, std::forward<TArgs>(args)...);
     }
 
     // //! \brief A convenience function for info streams.
@@ -348,12 +330,7 @@ public:
     template <typename... TArgs>
     void warn(const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Warn >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Block, Severity::Warn,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(Severity::Warn, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for warning log entries.
@@ -365,12 +342,8 @@ public:
     template <typename... TArgs>
     void warn(may_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Warn >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Warn,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_discard, Severity::Warn,
+                  message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for warning log entries.
@@ -382,12 +355,8 @@ public:
     template <typename... TArgs>
     void warn(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Warn >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Warn,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_truncate_or_discard, Severity::Warn,
+                  message, std::forward<TArgs>(args)...);
     }
 
     // //! \brief A convenience function for warning streams.
@@ -412,12 +381,7 @@ public:
     template <typename... TArgs>
     void error(const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Error >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Block, Severity::Error,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(Severity::Error, message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for error log entries.
@@ -429,12 +393,8 @@ public:
     template <typename... TArgs>
     void error(may_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Error >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Discard, Severity::Error,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_discard, Severity::Error,
+                  message, std::forward<TArgs>(args)...);
     }
 
     //! \brief A convenience function for error log entries.
@@ -446,12 +406,8 @@ public:
     template <typename... TArgs>
     void error(may_truncate_or_discard_t, const char* message, TArgs&&... args)
     {
-        auto flags = m_flags.load();
-        if ((flags & 0x80) != 0 && Severity::Error >= Severity(flags & 0x7F))
-        {
-            m_core->log(LogCore::ClaimPolicy::Truncate, Severity::Error,
-                        message, log11_detail::decayArgument(args)...);
-        }
+        this->log(may_truncate_or_discard, Severity::Error,
+                  message, std::forward<TArgs>(args)...);
     }
 
     // //! \brief A convenience function for error streams.
@@ -470,8 +426,17 @@ private:
     LogCore* m_core;
 
     //! The severity threshold which log levels must reach or exceed in order
-    //! to be forwarded to the core.
-    std::atomic<unsigned char> m_flags;
+    //! to be forwarded to the core. The MSB is used to keep track of the
+    //! enabled state.
+    std::atomic<unsigned char> m_configuration;
+
+
+    //! Returns \p true, if a message with level \p severity can be logged.
+    bool canLog(Severity severity) const noexcept
+    {
+        auto config = m_configuration.load();
+        return (config & 0x80) != 0 && severity >= Severity(config & 0x7F);
+    }
 };
 
 } // namespace log11

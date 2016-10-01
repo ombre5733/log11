@@ -60,7 +60,7 @@ unsigned nextPowerOf2(unsigned x) noexcept
 
 RingBuffer::Stream::Stream(
         RingBuffer& buffer, unsigned begin, unsigned length) noexcept
-    : m_buffer(buffer),
+    : m_buffer(&buffer),
       m_begin(begin),
       m_length(length)
 {
@@ -68,14 +68,14 @@ RingBuffer::Stream::Stream(
 
 RingBuffer::byte RingBuffer::Stream::peek() noexcept
 {
-    return *static_cast<byte*>(m_buffer.data(m_begin));
+    return *static_cast<byte*>(m_buffer->data(m_begin));
 }
 
 bool RingBuffer::Stream::read(void* dest, unsigned size) noexcept
 {
     if (size <= m_length)
     {
-        m_buffer.read(m_begin, dest, size);
+        m_buffer->read(m_begin, dest, size);
         m_begin += size;
         m_length -= size;
         return true;
@@ -91,7 +91,7 @@ bool RingBuffer::Stream::write(const void* source, unsigned size) noexcept
 {
     if (size <= m_length)
     {
-        m_buffer.write(m_begin, source, size);
+        m_buffer->write(m_begin, source, size);
         m_begin += size;
         m_length -= size;
         return true;
@@ -109,7 +109,7 @@ unsigned RingBuffer::Stream::readString(SplitStringView& view, unsigned size) no
         return 0;
 
     unsigned clippedSize = size <= m_length ? size : m_length;
-    m_buffer.unwrap(m_begin, view, clippedSize);
+    m_buffer->unwrap(m_begin, view, clippedSize);
     m_begin += clippedSize;
     m_length -= clippedSize;
     return clippedSize;
@@ -117,23 +117,47 @@ unsigned RingBuffer::Stream::readString(SplitStringView& view, unsigned size) no
 
 bool RingBuffer::Stream::writeString(const void* source, unsigned size) noexcept
 {
-    if (m_length == 0)
-        return false;
+    if (size == 0)
+        return true;
 
+    bool complete = true;
     if (size > m_length)
+    {
         size = m_length;
+        complete = false;
+    }
     if (size)
     {
-        m_buffer.write(m_begin, source, size);
+        m_buffer->write(m_begin, source, size);
         m_begin += size;
         m_length -= size;
     }
-    return true;
+    return complete;
+}
+
+void RingBuffer::Stream::skip(unsigned size) noexcept
+{
+    if (size > m_length)
+        size = m_length;
+
+    m_begin += size;
+    m_length -= size;
+}
+
+void RingBuffer::Stream::limit(unsigned size) noexcept
+{
+    if (m_length > size)
+        m_length = size;
 }
 
 // ----=====================================================================----
 //     RingBuffer::Block
 // ----=====================================================================----
+
+RingBuffer::Block::Block()
+{
+    m_length = header_size;
+}
 
 RingBuffer::Stream RingBuffer::Block::stream(RingBuffer& buffer) noexcept
 {

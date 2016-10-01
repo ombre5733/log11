@@ -35,6 +35,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <tuple>
 #include <type_traits>
 
 
@@ -70,6 +71,52 @@ public:
 
 protected:
     SerdesBase() = default;
+};
+
+struct SerdesVisitor
+{
+    // Size calculation
+
+    template <typename... TArgs>
+    static
+    std::size_t requiredSize(const SerdesOptions& opt,
+                             const TArgs&... args) noexcept
+    {
+        return doRequiredSize(opt, args...);
+    }
+
+    template <typename TArg, typename... TArgs>
+    static
+    std::size_t doRequiredSize(const SerdesOptions& opt,
+                               const TArg& arg, const TArgs&... args);
+
+    static
+    std::size_t doRequiredSize(const SerdesOptions&)
+    {
+        return 0;
+    }
+
+    // Serialization
+
+    // Return value is true, if no truncation occurred.
+    template <typename... TArgs>
+    static
+    bool serialize(const SerdesOptions& opt, RingBuffer::Stream& stream,
+                   const TArgs&... args) noexcept
+    {
+        return doSerialize(opt, stream, args...);
+    }
+
+    template <typename TArg, typename... TArgs>
+    static
+    bool doSerialize(const SerdesOptions& opt, RingBuffer::Stream& stream,
+                     const TArg& arg, const TArgs&... args);
+
+    static
+    bool doSerialize(const SerdesOptions&, RingBuffer::Stream&)
+    {
+        return true;
+    }
 };
 
 template <typename T>
@@ -140,6 +187,9 @@ public:
     static
     bool serialize(const SerdesOptions& opt,
                    RingBuffer::Stream& stream, const char* str) noexcept;
+
+    virtual
+    bool deserializeString(RingBuffer::Stream& inStream, SplitStringView& str) const noexcept = 0;
 };
 
 class ImmutableCharStarSerdes : public CharStarSerdes
@@ -154,6 +204,9 @@ public:
     virtual
     bool deserialize(RingBuffer::Stream& inStream,
                      TextStream& outStream) const noexcept override;
+
+    virtual
+    bool deserializeString(RingBuffer::Stream& inStream, SplitStringView& str) const noexcept override;
 };
 
 class MutableCharStarSerdes : public CharStarSerdes
@@ -169,9 +222,84 @@ public:
     virtual
     bool deserialize(RingBuffer::Stream& inStream,
                      TextStream& outStream) const noexcept override;
+
+    virtual
+    bool deserializeString(RingBuffer::Stream& inStream, SplitStringView& str) const noexcept override;
+};
+
+// Serializer for a format tuple, i.e. (const char* format, args...).
+class FormatTupleSerdes : public SerdesBase
+{
+public:
+    static
+    FormatTupleSerdes* instance();
+
+    template <typename... TArgs>
+    static
+    std::size_t requiredSize(const SerdesOptions& opt,
+                             const FormatTuple<TArgs...>& tuple) noexcept
+    {
+        return sizeof(void*)
+               + sizeof(std::uint16_t)
+               + CharStarSerdes::requiredSize(opt, tuple.format)
+               + argumentSize(opt, tuple,
+                              std::make_index_sequence<sizeof...(TArgs)>());
+    }
+
+    template <typename... TArgs, std::size_t... TIndices>
+    static
+    std::size_t argumentSize(const SerdesOptions& opt,
+                             const FormatTuple<TArgs...>& tuple,
+                             std::index_sequence<TIndices...>) noexcept
+    {
+        return SerdesVisitor::requiredSize(opt, std::get<TIndices>(tuple.args)...);
+    }
+
+    template <typename... TArgs>
+    static
+    bool serialize(const SerdesOptions& opt, RingBuffer::Stream& stream,
+                   const FormatTuple<TArgs...>& tuple) noexcept
+    {
+        SerdesBase* serdes = instance();
+        if (!stream.write(&serdes, sizeof(void*)))
+            return false;
+
+        RingBuffer::Stream backup = stream;
+        stream.skip(sizeof(std::uint16_t));
+
+        if (!CharStarSerdes::serialize(opt, stream, tuple.format))
+            return false;
+        bool complete = serializeArguments(
+                    opt, stream, tuple,
+                    std::make_index_sequence<sizeof...(TArgs)>());
+
+        std::uint16_t length = stream.begin() - backup.begin();
+        backup.write(length);
+        return complete;
+    }
+
+    template <typename... TArgs, std::size_t... TIndices>
+    static
+    bool serializeArguments(const SerdesOptions& opt, RingBuffer::Stream& stream,
+                     const FormatTuple<TArgs...>& tuple,
+                     std::index_sequence<TIndices...>) noexcept
+    {
+        return SerdesVisitor::serialize(opt, stream, std::get<TIndices>(tuple.args)...);
+    }
+
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     BinaryStream& outStream) const noexcept override;
+
+    virtual
+    bool deserialize(RingBuffer::Stream& inStream,
+                     TextStream& outStream) const noexcept override;
 };
 
 // ----=====================================================================----
+//     SerdesSelector
+// ----=====================================================================----
+
 // The SerdesSelector is a utility for mapping types to the corresponding
 // serdes.
 // - All pointer types are mapped to Serdes<const void*>
@@ -194,15 +322,42 @@ struct PointerSerdesSelector<char>
     using type = CharStarSerdes;
 };
 
-// Fold the serializers for pointer into void* serializers
+// Fold the serializers for pointers into void* serializers
 // (except for C-strings).
 template <typename T>
 struct SerdesSelector<T*> : public PointerSerdesSelector<std::remove_cv_t<T>>
 {
 };
 
+template <typename... T>
+struct SerdesSelector<FormatTuple<T...>>
+{
+    using type = FormatTupleSerdes;
+};
+
 template <typename T>
 using serdes_t = typename SerdesSelector<std::decay_t<T>>::type;
+
+// ----=====================================================================----
+//     SerdesDriver implementation
+// ----=====================================================================----
+
+template <typename TArg, typename... TArgs>
+std::size_t SerdesVisitor::doRequiredSize(
+        const SerdesOptions& opt,
+        const TArg& arg, const TArgs&... args)
+{
+    return serdes_t<TArg>::requiredSize(opt, arg)
+           + doRequiredSize(opt, args...);
+}
+
+template <typename TArg, typename... TArgs>
+bool SerdesVisitor::doSerialize(
+        const SerdesOptions& opt, RingBuffer::Stream& stream,
+        const TArg& arg, const TArgs&... args)
+{
+    return serdes_t<TArg>::serialize(opt, stream, arg) && doSerialize(opt, stream, args...);
+}
 
 } // namespace log11_detail
 } // namespace log11

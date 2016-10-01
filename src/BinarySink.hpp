@@ -36,48 +36,58 @@
 namespace log11
 {
 
+// 0x00: 000x xxxx ... positive integer
+// 0x20: 001x xxxx ... negative integer
+//                     0-23 ... immediate
+//                       24 ... +1 byte
+//                       25 ... +2 byte
+//                       26 ... +3 byte
+//                       27 ... +4 byte
+//                       28 ... +5 byte
+//                       29 ... +6 byte
+//                       30 ... +7 byte
+//                       31 ... +8 byte
+//
+// 0x40: 010x xxxx ... string
+//                     0-29 ... immediate size
+//                       30 ... +1 byte
+//                       31 ... +2 byte
+//
+// 0x60: 011x xxxx ... user-defined types
+//                        0 ... struct with 1 byte ID
+//                        1 ... struct with 2 byte ID
+//                        2 ... struct with 3 byte ID
+//                        3 ... struct with 4 byte ID
+//                        4 ... enum with 1 byte ID
+//                        5 ... enum with 2 byte ID
+//                        6 ... enum with 3 byte ID
+//                        7 ... enum with 4 byte ID
+//                       16 ... format tuple begin
+//
+// 0x80: reserved
+// 0xA0: reserved
+// 0xC0: reserved
+//
+// 0xE0: 111x xxxx ... simple types
+//                        0 ... false
+//                        1 ... true
+//                        2 ... null
+//                        8 ... float
+//                        9 ... double
+//                       10 ... long double
+//                       16 ... void* (3 byte)
+//                       17 ... void* (4 byte)
+//                       18 ... char* (8 byte)
+//                       20 ... char* (3 byte)
+//                       21 ... char* (4 byte)
+//                       22 ... char* (8 byte)
+//                       31 ... break
+//
+// TODO:
+// - arrays
 class BinarySink : public BinarySinkBase
 {
 public:
-    enum class TypeTag
-    {
-        False         =  1,
-        True          =  2,
-
-        Char          =  3,
-
-        Int8          =  4,
-        Int16         =  5,
-        Int32         =  6,
-        Int64         =  7,
-
-        Uint8         =  8,
-        Uint16        =  9,
-        Uint32        = 10,
-        Uint64        = 11,
-
-        VarInt16      = 12,
-        VarInt32      = 13,
-        VarInt64      = 14,
-
-        VarUint16     = 15,
-        VarUint32     = 16,
-        VarUint64     = 17,
-
-        Float         = 18,
-        Double        = 19,
-        LongDouble    = 20,
-
-        Pointer       = 21,
-
-        String        = 22,
-        StringPointer = 23,
-        StringView    = 24, // not used
-
-        EndOfStruct   = 25
-    };
-
-
     virtual
     void writeByte(byte data) = 0;
 
@@ -141,25 +151,24 @@ protected:
     void write(const SplitStringView& str) override;
 
     virtual
-    void beginStruct(std::uint32_t tag);
+    void beginFormatTuple() override;
 
     virtual
-    void endStruct(std::uint32_t tag);
+    void endFormatTuple() override;
+
+    virtual
+    void beginStruct(std::uint32_t tag) override;
+
+    virtual
+    void endStruct(std::uint32_t tag) override;
+
+    virtual
+    void writeEnum(std::uint32_t tag, std::int64_t value) override;
 
 
 
-    void writeTag(TypeTag tag);
-
-    template <typename T>
-    void writeInteger(T value);
-
-    void writeVarInt(std::uint32_t value);
-
-    void writeVarInt(std::int32_t value);
-
-    void writeVarInt(std::uint64_t value);
-
-    void writeVarInt(std::int64_t value);
+    void writeUnsignedInteger(std::uint64_t value, byte tag = 0x00);
+    void writeSignedInteger(std::int64_t value);
 };
 
 } // namespace log11

@@ -36,6 +36,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -51,7 +52,23 @@ namespace log11
 {
 
 class BinarySinkBase;
+class LogBuffer;
+class Logger;
 class TextSink;
+
+
+//! A tag type for log entries which may be discarded.
+struct may_discard_t {};
+//! A tag type for log entries which may be truncated.
+struct may_truncate_or_discard_t {};
+
+//! This tag specifies that a log entry may be discarded if the FIFO is full.
+//! The message will either be logged as a whole or discarded.
+constexpr may_discard_t may_discard = may_discard_t();
+
+//! This tag specifies that a log entry may be truncated or discarded
+//! if there is no sufficient space in the FIFO.
+constexpr may_truncate_or_discard_t may_truncate_or_discard = may_truncate_or_discard_t();
 
 
 
@@ -62,11 +79,12 @@ struct Directive
 {
     enum Command
     {
+        Skip,
         Terminate,
         SetImmutableSpace,
         SetBothSinks,
         SetBinarySink,
-        SetTextSink
+        SetTextSink,
     };
 
     static
@@ -139,16 +157,23 @@ public:
     //! Sets the binary sink to \p binarySink and the text sink to \p textSink.
     void setSinks(BinarySinkBase* binarySink, TextSink* textSink);
 
+    //! {D} ... days
+    //! {H} ... hours
+    //! {M} ... minutes
+    //! {S} ... seconds
+    //! {ms} ... Milliseconds
+    //! {us} ... Microseconds
+    //! {ns} ... Nanoseconds
+    //!
+    //! {L} ... severity level
+    void setTextHeader(const char* header);
+
     //! \brief Enables the immutable string optimization.
     //!
     //! Tells the logger to optimize the strings which are located in the
     //! memory areay <tt>[beginAddress, endAddress)</tt>.
     void setImmutableStringSpace(
             std::uintptr_t beginAddress, std::uintptr_t endAddress);
-
-    template <typename... TArgs>
-    void log(ClaimPolicy policy, Severity severity, const char* format,
-             TArgs&&... args);
 
 private:
     enum ConsumerState
@@ -188,57 +213,40 @@ private:
     ConsumerState m_consumerState{Initial};
 
 
-
-    template <typename TArg, typename... TArgs>
-    static
-    std::size_t doRequiredSize(const log11_detail::SerdesOptions& opt,
-                               const TArg& arg, const TArgs&... args)
-    {
-        return log11_detail::serdes_t<TArg>::requiredSize(opt, arg)
-               + doRequiredSize(opt, args...);
-    }
-
-    static
-    std::size_t doRequiredSize(const log11_detail::SerdesOptions&)
-    {
-        return 0;
-    }
+    static constexpr size_t headerSize
+            = sizeof(log11_detail::Directive)
+              + sizeof(std::chrono::high_resolution_clock::rep);
 
 
     template <typename TArg, typename... TArgs>
-    static
-    void doSerialize(const log11_detail::SerdesOptions& opt,
-                     RingBuffer::Stream& stream,
-                     const TArg& arg, const TArgs&... args)
-    {
-        if (log11_detail::serdes_t<TArg>::serialize(opt, stream, arg))
-        {
-            doSerialize(opt, stream, args...);
-        }
-    }
+    void log(ClaimPolicy policy, Severity severity,
+             TArg&& arg, TArgs&&... args);
 
     static
-    void doSerialize(const log11_detail::SerdesOptions&, RingBuffer::Stream&)
-    {
-    }
+    void writeRecordHeader(RingBuffer::Stream& stream,
+                           log11_detail::Directive directive);
 
+    RingBuffer::Block claim(ClaimPolicy policy, std::size_t argumentSize);
 
     void consumeFifoEntries();
-    void writeText(TextSink* sink, RingBuffer::Stream inStream);
-    void writeBinary(BinarySinkBase* sink, RingBuffer::Stream inStream);
+
+    void writeToText(RingBuffer::Stream inStream);
+    void writeToBinary(RingBuffer::Stream inStream);
+
+
+    friend
+    class LogBuffer;
+
+    friend
+    class Logger;
 };
 
-template <typename... TArgs>
+template <typename TArg, typename... TArgs>
 void LogCore::log(ClaimPolicy policy, Severity severity,
-                  const char* format, TArgs&&... args)
+                  TArg&& arg, TArgs&&... args)
 {
     using namespace std;
     using namespace log11_detail;
-
-    static constexpr unsigned header_size
-            = sizeof(Directive)
-              + sizeof(std::chrono::high_resolution_clock::rep)
-              + sizeof(const char*);
 
     // We cannot rely on the serdes options if a change is going on.
     if (m_crossThreadChangeOngoing)
@@ -248,30 +256,26 @@ void LogCore::log(ClaimPolicy policy, Severity severity,
         m_crossThreadChangeDone.expect(m_crossThreadChangeOngoing, false);
     }
 
-    auto argumentSize = doRequiredSize(m_serdesOptions, args...);
-    auto totalSize = argumentSize + header_size;
+    size_t argumentSize = SerdesVisitor::requiredSize(m_serdesOptions, arg, args...);
+    auto totalSize = argumentSize + headerSize;
 
     RingBuffer::Block claimed;
     switch (policy)
     {
     case Block:    claimed = m_messageFifo.claim(totalSize); break;
-    case Truncate: claimed = m_messageFifo.tryClaim(header_size, totalSize); break;
+    case Truncate: claimed = m_messageFifo.tryClaim(headerSize, totalSize); break;
     case Discard:  claimed = m_messageFifo.tryClaim(totalSize, totalSize); break;
     }
     if (claimed.length() == 0)
         return;
 
     auto stream = claimed.stream(m_messageFifo);
-
     // Write the header.
-    stream.write(Directive::entry(severity, claimed.length() < totalSize));
-    auto durationSinceEpoche
-            = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-    stream.write(&durationSinceEpoche, sizeof(durationSinceEpoche));
-    stream.write(&format, sizeof(const char*));
-
+    writeRecordHeader(
+                stream,
+                Directive::entry(severity, claimed.length() < totalSize));
     // Serialize all the arguments.
-    doSerialize(m_serdesOptions, stream, args...);
+    SerdesVisitor::serialize(m_serdesOptions, stream, arg, args...);
 
     if (policy == Block)
         m_messageFifo.publish(claimed);

@@ -41,8 +41,9 @@ namespace log11_detail
 
 bool SerdesOptions::isImmutable(const char* str) const noexcept
 {
-    return uintptr_t(str) < immutableStringEnd
-           && uintptr_t(str) >= immutableStringBegin;
+    return str == nullptr
+           || (uintptr_t(str) < immutableStringEnd
+               && uintptr_t(str) >= immutableStringBegin);
 }
 
 // ----=====================================================================----
@@ -51,6 +52,71 @@ bool SerdesOptions::isImmutable(const char* str) const noexcept
 
 SerdesBase::~SerdesBase()
 {
+}
+
+// ----=====================================================================----
+//     FormatTupleSerdes
+// ----=====================================================================----
+
+FormatTupleSerdes* FormatTupleSerdes::instance()
+{
+    static FormatTupleSerdes serdes;
+    return &serdes;
+}
+
+bool FormatTupleSerdes::deserialize(
+        RingBuffer::Stream& inStream, BinaryStream& outStream) const noexcept
+{
+    RingBuffer::Stream postStream = inStream;
+    std::uint16_t length;
+    if (!inStream.read(&length, sizeof(std::uint16_t)))
+        return false;
+    postStream.skip(length);
+    inStream.limit(length);
+
+    SerdesBase* serdes;
+    if (!inStream.read(&serdes, sizeof(void*)) || !serdes)
+        return false;
+
+    SplitStringView str{nullptr, 0, nullptr, 0};
+    if (!static_cast<CharStarSerdes*>(serdes)->deserializeString(inStream, str))
+        return false;
+
+    outStream.m_sink->beginFormatTuple();
+    outStream << str;
+    for (;;)
+    {
+        if (!inStream.read(&serdes, sizeof(void*)) || !serdes)
+            break;
+        serdes->deserialize(inStream, outStream);
+    }
+    outStream.m_sink->endFormatTuple();
+
+    return true;
+}
+
+bool FormatTupleSerdes::deserialize(
+        RingBuffer::Stream& inStream, TextStream& outStream) const noexcept
+{
+    RingBuffer::Stream postStream = inStream;
+    std::uint16_t length;
+    if (!inStream.read(&length, sizeof(std::uint16_t)))
+        return false;
+    postStream.skip(length);
+    inStream.limit(length);
+
+    SerdesBase* serdes;
+    if (!inStream.read(&serdes, sizeof(void*)) || !serdes)
+        return false;
+
+    SplitStringView str{nullptr, 0, nullptr, 0};
+    if (!static_cast<CharStarSerdes*>(serdes)->deserializeString(inStream, str))
+        return false;
+
+    outStream.doFormat(str,
+                       log11_detail::ArgumentForwarder<RingBuffer::Stream>(
+                           outStream, inStream));
+    return true;
 }
 
 // ----=====================================================================----
@@ -132,6 +198,22 @@ bool ImmutableCharStarSerdes::deserialize(
     }
 }
 
+bool ImmutableCharStarSerdes::deserializeString(
+        RingBuffer::Stream& inStream, SplitStringView& str) const noexcept
+{
+    Immutable<const char*> temp;
+    if (inStream.read(&temp, sizeof(Immutable<const char*>)))
+    {
+        str.begin1 = temp.get();
+        str.length1 = std::strlen(str.begin1);
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 // ----=====================================================================----
 //     MutableCharStarSerdes
 // ----=====================================================================----
@@ -171,6 +253,21 @@ bool MutableCharStarSerdes::deserialize(
         if (readLength)
             outStream << str;
         return readLength == length;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+bool MutableCharStarSerdes::deserializeString(
+        RingBuffer::Stream& inStream, SplitStringView& str) const noexcept
+{
+    std::uint16_t length;
+    if (inStream.read(&length, sizeof(std::uint16_t)))
+    {
+        inStream.readString(str, length);
+        return true;
     }
     else
     {

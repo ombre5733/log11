@@ -35,68 +35,6 @@ using namespace std;
 namespace log11
 {
 
-//! Returns \p true, if it is profitable to store the \p value as varint
-//! (aka LEB128).
-template <typename T>
-constexpr
-std::enable_if_t<std::is_unsigned<T>::value, bool> isVarIntProfitable(T value)
-{
-    return sizeof(T) > 1 && value < T(1ull << (7 * (sizeof(T) - 1)));
-}
-
-//! Returns \p true, if it is profitable to store the \p value as varint
-//! (aka LEB128).
-template <typename T, typename U = std::make_unsigned_t<T>>
-constexpr
-std::enable_if_t<std::is_signed<T>::value, bool> isVarIntProfitable(T value)
-{
-    return sizeof(T) > 1
-            && value >= -T(1ull << (7 * (sizeof(T) - 1))) / 2
-            && value < T(1ull << (7 * (sizeof(T) - 1))) / 2;
-}
-
-template <unsigned N, bool S>
-struct IntToTagMap;
-
-#define INT_TO_TAG_MAP(n, s, x, y)                                             \
-    template <>                                                                \
-    struct IntToTagMap<n, s>                                                   \
-    {                                                                          \
-        static constexpr auto tag = BinarySink::TypeTag::x;                    \
-        static constexpr auto var_tag = BinarySink::TypeTag::y;                \
-    };
-
-INT_TO_TAG_MAP(1, true, Int8,  Int8 /*dummy*/)
-INT_TO_TAG_MAP(2, true, Int16, VarInt16)
-INT_TO_TAG_MAP(4, true, Int32, VarInt32)
-INT_TO_TAG_MAP(8, true, Int64, VarInt64)
-
-INT_TO_TAG_MAP(1, false, Uint8,  Uint8 /*dummy*/)
-INT_TO_TAG_MAP(2, false, Uint16, VarUint16)
-INT_TO_TAG_MAP(4, false, Uint32, VarUint32)
-INT_TO_TAG_MAP(8, false, Uint64, VarUint64)
-
-
-
-template <bool TFits32Bit, bool TSigned>
-struct promote_integer_type_helper;
-
-template <>
-struct promote_integer_type_helper<true, true>   { using type = std::int32_t; };
-
-template <>
-struct promote_integer_type_helper<false, true>  { using type = std::int64_t; };
-
-template <>
-struct promote_integer_type_helper<true, false>  { using type = std::uint32_t; };
-
-template <>
-struct promote_integer_type_helper<false, false> { using type = std::uint64_t; };
-
-
-template <typename T>
-using promoted_integer_t = typename promote_integer_type_helper<sizeof(T) <= 4, is_signed<T>::value>::type;
-
 // ----=====================================================================----
 //     BinarySink
 // ----=====================================================================----
@@ -115,13 +53,19 @@ void BinarySink::writeBytes(const byte* data, unsigned size)
 
 void BinarySink::write(bool value)
 {
-    writeTag(value ? TypeTag::True : TypeTag::False);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(value ? 0xE0 : 0xE1);
 }
 
 void BinarySink::write(char ch)
 {
-    writeTag(TypeTag::Char);
-    writeByte(static_cast<byte>(ch));
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0x41);
+    writeByte(byte(ch));
 }
 
 // -----------------------------------------------------------------------------
@@ -130,52 +74,82 @@ void BinarySink::write(char ch)
 
 void BinarySink::write(signed char value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeSignedInteger(value);
 }
 
 void BinarySink::write(unsigned char value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeUnsignedInteger(value);
 }
 
 void BinarySink::write(short value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeSignedInteger(value);
 }
 
 void BinarySink::write(unsigned short value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeUnsignedInteger(value);
 }
 
 void BinarySink::write(int value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeSignedInteger(value);
 }
 
 void BinarySink::write(unsigned int value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeUnsignedInteger(value);
 }
 
 void BinarySink::write(long value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeSignedInteger(value);
 }
 
 void BinarySink::write(unsigned long value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeUnsignedInteger(value);
 }
 
 void BinarySink::write(long long value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeSignedInteger(value);
 }
 
 void BinarySink::write(unsigned long long value)
 {
-    writeInteger(value);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeUnsignedInteger(value);
 }
 
 // -----------------------------------------------------------------------------
@@ -184,19 +158,28 @@ void BinarySink::write(unsigned long long value)
 
 void BinarySink::write(float value)
 {
-    writeTag(TypeTag::Float);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0xE0 + 8);
     writeBytes(reinterpret_cast<byte*>(&value), sizeof(value));
 }
 
 void BinarySink::write(double value)
 {
-    writeTag(TypeTag::Double);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0xE0 + 9);
     writeBytes(reinterpret_cast<byte*>(&value), sizeof(value));
 }
 
 void BinarySink::write(long double value)
 {
-    writeTag(TypeTag::LongDouble);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0xE0 + 10);
     writeBytes(reinterpret_cast<byte*>(&value), sizeof(value));
 }
 
@@ -204,32 +187,89 @@ void BinarySink::write(long double value)
 //     Pointer output
 // -----------------------------------------------------------------------------
 
-void BinarySink::write(const void* value)
+void BinarySink::write(const void* ptr)
 {
-    writeTag(TypeTag::Pointer);
-    writeBytes(reinterpret_cast<byte*>(&value), sizeof(value));
+    if (!isCurrentRecordLogged())
+        return;
+
+    std::uintptr_t value = std::uintptr_t(ptr);
+
+    if (value == 0)
+    {
+        writeByte(0xE0 + 2);
+    }
+    else if (value < std::uintptr_t(1) << 24)
+    {
+        writeByte(0xE0 + 16);
+        writeBytes(reinterpret_cast<const byte*>(&value), 3);
+    }
+    else if (sizeof(value) == 4)
+    {
+        writeByte(0xE0 + 17);
+        writeBytes(reinterpret_cast<const byte*>(&value), sizeof(value));
+    }
+    else
+    {
+        writeByte(0xE0 + 18);
+        writeBytes(reinterpret_cast<const byte*>(&value), sizeof(value));
+    }
 }
 
 // -----------------------------------------------------------------------------
 //     String output
 // -----------------------------------------------------------------------------
 
-//void BinarySink::write(Format<const char*> str);
-//void BinarySink::write(Immutable<Format<const char*>> str);
-
 void BinarySink::write(Immutable<const char*> str,
                        std::uintptr_t immutableStringSpaceBegin)
 {
-    writeTag(TypeTag::StringPointer);
-    writeVarInt(uintptr_t(str.get()) - immutableStringSpaceBegin);
+    if (!isCurrentRecordLogged())
+        return;
+
+    std::uintptr_t value = std::uintptr_t(str.get()) - immutableStringSpaceBegin;
+
+    if (str.get() == nullptr)
+    {
+        writeByte(0x40);
+    }
+    else if (value < std::uintptr_t(1) << 24)
+    {
+        writeByte(0xE0 + 20);
+        writeBytes(reinterpret_cast<const byte*>(&value), 3);
+    }
+    else if (sizeof(value) == 4)
+    {
+        writeByte(0xE0 + 21);
+        writeBytes(reinterpret_cast<const byte*>(&value), sizeof(value));
+    }
+    else
+    {
+        writeByte(0xE0 + 22);
+        writeBytes(reinterpret_cast<const byte*>(&value), sizeof(value));
+    }
 }
 
 void BinarySink::write(const SplitStringView& str)
 {
-    writeTag(TypeTag::String);
+    if (!isCurrentRecordLogged())
+        return;
+
     auto totalSize = str.length1 + str.length2;
-    writeVarInt(static_cast<promoted_integer_t<decltype(totalSize)>>(
-        totalSize));
+    if (totalSize < 30)
+    {
+        writeByte(0x40 + totalSize);
+    }
+    else if (totalSize < 256)
+    {
+        writeByte(0x40 + 30);
+        writeByte(totalSize);
+    }
+    else
+    {
+        writeByte(0x40 + 31);
+        writeByte(totalSize);
+        writeByte(totalSize >> 8);
+    }
+
     if (str.length1)
         writeBytes(reinterpret_cast<const byte*>(str.begin1), str.length1);
     if (str.length2)
@@ -240,86 +280,129 @@ void BinarySink::write(const SplitStringView& str)
 //     User-defined types output
 // -----------------------------------------------------------------------------
 
+void BinarySink::beginFormatTuple()
+{
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0x60 + 16);
+}
+
+void BinarySink::endFormatTuple()
+{
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0xE0 + 31);
+}
+
 void BinarySink::beginStruct(std::uint32_t tag)
 {
-    writeVarInt(tag << 1);
+    if (!isCurrentRecordLogged())
+        return;
+
+    if (tag < std::uint32_t(1) << 8)
+    {
+        writeByte(0x60 + 0);
+        writeByte(tag);
+    }
+    else if (tag < std::uint32_t(1) << 16)
+    {
+        writeByte(0x60 + 1);
+        writeByte(tag >> 0);
+        writeByte(tag >> 8);
+    }
+    else if (tag < std::uint32_t(1) << 24)
+    {
+        writeByte(0x60 + 2);
+        writeByte(tag >>  0);
+        writeByte(tag >>  8);
+        writeByte(tag >> 16);
+    }
+    else
+    {
+        writeByte(0x60 + 3);
+        writeByte(tag >>  0);
+        writeByte(tag >>  8);
+        writeByte(tag >> 16);
+        writeByte(tag >> 24);
+    }
 }
 
 void BinarySink::endStruct(std::uint32_t /*tag*/)
 {
-    writeTag(TypeTag::EndOfStruct);
+    if (!isCurrentRecordLogged())
+        return;
+
+    writeByte(0xE0 + 31);
+}
+
+void BinarySink::writeEnum(std::uint32_t tag, std::int64_t value)
+{
+    if (!isCurrentRecordLogged())
+        return;
+
+    if (tag < std::uint32_t(1) << 8)
+    {
+        writeByte(0x60 + 4);
+        writeByte(tag);
+    }
+    else if (tag < std::uint32_t(1) << 16)
+    {
+        writeByte(0x60 + 5);
+        writeByte(tag >> 0);
+        writeByte(tag >> 8);
+    }
+    else if (tag < std::uint32_t(1) << 24)
+    {
+        writeByte(0x60 + 6);
+        writeByte(tag >>  0);
+        writeByte(tag >>  8);
+        writeByte(tag >> 16);
+    }
+    else
+    {
+        writeByte(0x60 + 7);
+        writeByte(tag >>  0);
+        writeByte(tag >>  8);
+        writeByte(tag >> 16);
+        writeByte(tag >> 24);
+    }
+    writeSignedInteger(value);
 }
 
 // ----=====================================================================----
 //     Protected methods
 // ----=====================================================================----
 
-void BinarySink::writeTag(TypeTag tag)
+void BinarySink::writeUnsignedInteger(std::uint64_t value, byte tag)
 {
-    writeByte(static_cast<byte>(tag));
-}
+    byte buffer[9];
+    unsigned idx = 1;
 
-void BinarySink::writeVarInt(std::uint32_t value)
-{
-    while (value > 0x7F)
+    if (value < 24)
     {
-        writeByte((value & 0x7F) | 0x80);
-        value >>= 7;
-    }
-    writeByte(value);
-}
-
-void BinarySink::writeVarInt(std::int32_t x)
-{
-    using U = unsigned;
-    U value = static_cast<U>(x) << 1;
-    if (x < 0)
-        value = ~value;
-    while (value > 0x7F)
-    {
-        writeByte((value & 0x7F) | 0x80);
-        value >>= 7;
-    }
-    writeByte(value);
-}
-
-void BinarySink::writeVarInt(std::uint64_t value)
-{
-    while (value > 0x7F)
-    {
-        writeByte((value & 0x7F) | 0x80);
-        value >>= 7;
-    }
-    writeByte(value);
-}
-
-void BinarySink::writeVarInt(std::int64_t x)
-{
-    using U = unsigned long long;
-    U value = static_cast<U>(x) << 1;
-    if (x < 0)
-        value = ~value;
-    while (value > 0x7F)
-    {
-        writeByte((value & 0x7F) | 0x80);
-        value >>= 7;
-    }
-    writeByte(value);
-}
-
-template <typename T>
-void BinarySink::writeInteger(T value)
-{
-    if (isVarIntProfitable(value))
-    {
-        writeTag(IntToTagMap<sizeof(T), is_signed<T>::value>::var_tag);
-        writeVarInt(static_cast<promoted_integer_t<T>>(value));
+        writeByte(tag + value);
     }
     else
     {
-        writeTag(IntToTagMap<sizeof(T), is_signed<T>::value>::tag);
-        writeBytes(reinterpret_cast<byte*>(&value), sizeof(value));
+        buffer[0] = tag + 23;
+        while (value)
+        {
+            ++buffer[0];
+            buffer[idx++] = value & 0xFF;
+            value >>= 8;
+        }
+        writeBytes(&buffer[0], idx);
     }
+}
+
+void BinarySink::writeSignedInteger(std::int64_t value)
+{
+    if (value >= 0)
+        writeUnsignedInteger(value, 0x00);
+    else
+        writeUnsignedInteger(~static_cast<std::uint64_t>(value), 0x20);
 }
 
 } // namespace log11

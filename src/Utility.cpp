@@ -314,7 +314,7 @@ Tag toTag(const char* begin, std::size_t length) noexcept
 }
 
 // ----=====================================================================----
-//     LogHeaderPrinter
+//     RecordHeaderGenerator
 // ----=====================================================================----
 
 RecordHeaderGenerator::RecordHeaderGenerator()

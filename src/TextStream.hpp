@@ -28,10 +28,12 @@
 #define LOG11_TEXTSTREAM_HPP
 
 #include "Config.hpp"
+#include "RingBuffer.hpp"
 #include "TextSink.hpp"
 #include "Utility.hpp"
 
 #include <cstddef>
+#include <cstring>
 #include <type_traits>
 #include <utility>
 
@@ -60,27 +62,27 @@ template <typename T>
 struct NoTextStreamOutputFunctionDefined;
 
 template <typename T>
-struct try_textstream_shift_operator
+struct try_free_textstream_format
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(std::declval<log11::TextStream&>() << std::declval<U&>(), std::true_type());
+        -> decltype(format(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using can_call = decltype(test<T>(0));
+    using can_call = decltype(test<T>(nullptr));
 
     template <typename U>
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        stream << std::forward<U>(value);
+        format(stream, std::forward<U>(value));
     }
 
     template <typename U>
     static
-    void f(log11::TextStream&, U&&, not_t<can_call>)
+    void f(log11::TextStream&, U&&, Not<can_call>)
     {
         NoTextStreamOutputFunctionDefined<T> dummy;
         (void)dummy;
@@ -88,83 +90,56 @@ struct try_textstream_shift_operator
 };
 
 template <typename T>
-struct try_free_textstream_write
+struct try_member_textstream_format
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(write(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
+        -> decltype(std::declval<U&>().format(std::declval<log11::TextStream&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using can_call = decltype(test<T>(0));
+    using can_call = decltype(test<T>(nullptr));
 
     template <typename U>
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        write(stream, std::forward<U>(value));
+        std::forward<U>(value).format(stream);
     }
 
     template <typename U>
     static
-    void f(log11::TextStream& stream, U&& value, not_t<can_call>)
+    void f(log11::TextStream& stream, U&& value, Not<can_call>)
     {
-        try_textstream_shift_operator<T>::f(stream, std::forward<U>(value), std::true_type());
+        try_free_textstream_format<T>::f(stream, std::forward<U>(value), std::true_type());
     }
 };
 
 template <typename T>
-struct try_member_textstream_write
+struct try_typeinfo_textstream_format
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(std::declval<U&>().write(std::declval<log11::TextStream&>()), std::true_type());
+        -> decltype(log11::TypeInfo<U>::format(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
 
-    using can_call = decltype(test<T>(0));
+    using can_call = decltype(test<T>(nullptr));
 
     template <typename U>
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        std::forward<U>(value).write(stream);
+        log11::TypeInfo<T>::format(stream, std::forward<U>(value));
     }
 
     template <typename U>
     static
-    void f(log11::TextStream& stream, U&& value, not_t<can_call>)
+    void f(log11::TextStream& stream, U&& value, Not<can_call>)
     {
-        try_free_textstream_write<T>::f(stream, std::forward<U>(value), std::true_type());
-    }
-};
-
-template <typename T>
-struct try_typeinfo_textstream_write
-{
-    template <typename U>
-    static constexpr auto test(U*)
-        -> decltype(log11::TypeInfo<U>::write(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
-
-    template <typename U>
-    static constexpr std::false_type test(...);
-
-    using can_call = decltype(test<T>(0));
-
-    template <typename U>
-    static
-    void f(log11::TextStream& stream, U&& value, can_call)
-    {
-        log11::TypeInfo<T>::write(stream, value);
-    }
-
-    template <typename U>
-    static
-    void f(log11::TextStream& stream, U&& value, not_t<can_call>)
-    {
-        try_member_textstream_write<T>::f(stream, std::forward<U>(value), std::true_type());
+        try_member_textstream_format<T>::f(stream, std::forward<U>(value), std::true_type());
     }
 };
 
@@ -180,14 +155,81 @@ public:
     TextForwarderSink& operator=(const TextForwarderSink&) = delete;
 
     virtual
-    void putChar(char ch) override;
+    void writeChar(char ch) override;
 
     virtual
-    void putString(const char* str, std::size_t size) override;
+    void writeString(const char* str, std::size_t size) override;
 
 private:
     TextStream& m_stream;
     std::size_t m_numCharacters;
+};
+
+
+
+template <typename...  T>
+struct ArgumentForwarder
+{
+    template <typename... U>
+    explicit
+    ArgumentForwarder(TextStream& outStream, U&&... args) noexcept
+        : m_index(0),
+          m_outStream(outStream),
+          m_args(std::forward<U>(args)...)
+    {
+    }
+
+    void printNext()
+    {
+        doPrintNext<0>(std::integral_constant<bool, 0 < sizeof...(T)>());
+        ++m_index;
+    }
+
+    void printRest()
+    {
+        while (m_index < sizeof...(T))
+        {
+            doPrintNext<0>(std::integral_constant<bool, 0 < sizeof...(T)>());
+            ++m_index;
+        }
+    }
+
+private:
+    unsigned m_index;
+    TextStream& m_outStream;
+    std::tuple<T...> m_args;
+
+    template <unsigned I>
+    void doPrintNext(std::integral_constant<bool, true>)
+    {
+        if (m_index == I)
+            m_outStream << std::get<I>(m_args);
+        else
+            doPrintNext<I+1>(std::integral_constant<bool, I+1 < sizeof...(T)>());
+    }
+
+    template <unsigned I>
+    void doPrintNext(std::integral_constant<bool, false>)
+    {
+    }
+};
+
+template <>
+struct ArgumentForwarder<RingBuffer::Stream>
+{
+    explicit
+    ArgumentForwarder(TextStream& outStream, RingBuffer::Stream& inStream)
+        : m_inStream(inStream),
+          m_outStream(outStream)
+    {
+    }
+
+    void printNext();
+    void printRest();
+
+private:
+    RingBuffer::Stream& m_inStream;
+    TextStream& m_outStream;
 };
 
 } // namespace log11_detail
@@ -198,49 +240,60 @@ class TextStream
 {
 public:
     explicit
-    TextStream(TextSink& sink);
+    TextStream(TextSink& sink, log11_detail::ScratchPad& scratchPad);
 
     TextStream(const TextStream&) = delete;
     TextStream& operator=(const TextStream&) = delete;
 
-    //TODO: TextStream(TextStream&& rhs);
-    //TODO: TextStream& operator=(TextStream&& rhs);
+    //! \brief Formats in a printf-like manner.
+    //! Prints the given \p fmt string, with interpolated \p args.
+    template <typename... TArgs>
+    TextStream& format(const char* fmt, TArgs&&... args);
 
-    TextStream& operator<<(bool value);
+    //! \brief Outputs a value.
+    //!
+    //! Prints the given \p value and returns this stream.
+    template <typename T>
+    TextStream& operator<<(T&& value)
+    {
+        write(std::forward<T>(value));
+        return *this;
+    }
 
-    TextStream& operator<<(char ch);
 
-    TextStream& operator<<(signed char value);
-    TextStream& operator<<(unsigned char value);
-    TextStream& operator<<(short value);
-    TextStream& operator<<(unsigned short value);
-    TextStream& operator<<(int value);
-    TextStream& operator<<(unsigned int value);
-    TextStream& operator<<(long value);
-    TextStream& operator<<(unsigned long value);
-    TextStream& operator<<(long long value);
-    TextStream& operator<<(unsigned long long value);
+    void write(bool value);
 
-    TextStream& operator<<(float value);
-    TextStream& operator<<(double value);
-    TextStream& operator<<(long double value);
+    void write(char ch);
 
-    TextStream& operator<<(const void* value);
+    void write(signed char value);
+    void write(unsigned char value);
+    void write(short value);
+    void write(unsigned short value);
+    void write(int value);
+    void write(unsigned int value);
+    void write(long value);
+    void write(unsigned long value);
+    void write(long long value);
+    void write(unsigned long long value);
 
-    TextStream& operator<<(const char* str);
-    TextStream& operator<<(const SplitStringView& str);
+    void write(float value);
+    void write(double value);
+    void write(long double value);
+
+    void write(const void* value);
+
+    void write(const char* str);
+    void write(Immutable<const char*> str);
+    void write(const SplitStringView& str);
 
     template <typename T,
-              typename = std::enable_if_t<!log11_detail::is_builtin<T>::value>>
-    TextStream& operator<<(T&& value);
+              typename = std::enable_if_t<!log11_detail::IsBuiltin<T>::value>>
+    void write(T&& value);
+
 
     template <typename... TArgs>
-    TextStream& write(const char* fmt, TArgs&&... args);
-
-    const char* parseFormatString(const char* str)
-    {
-        return m_format.parse(str);
-    }
+    void doFormat(SplitStringView str,
+                  log11_detail::ArgumentForwarder<TArgs...>&& args);
 
 private:
     using max_int_type = unsigned long long;
@@ -295,9 +348,9 @@ private:
 
         const char* parse(const char* str);
 
-        int m_argumentIndex;
-        int minWidth;
-        int precision;
+        short int m_argumentIndex;
+        short int minWidth;
+        short int precision;
         char fill;
         Alignment align;
         SignPolicy sign;
@@ -307,15 +360,11 @@ private:
     };
 
     TextSink* m_sink;
+    log11_detail::ScratchPad& m_scratchPad;
 
     Format m_format;
 
 
-
-    void printArgument(unsigned index);
-
-    template <typename TArg, typename... TArgs>
-    void printArgument(unsigned index, TArg&& arg, TArgs&&... args);
 
     template <unsigned char TBase>
     int countDigits(max_int_type value, max_int_type& divisor);
@@ -340,64 +389,93 @@ private:
 };
 
 template <typename T, typename>
-TextStream& TextStream::operator<<(T&& value)
+void TextStream::write(T&& value)
 {
     // TODO: padding
     // TODO: If this->m_format.align != left, we have to use a buffered sink
 
     log11_detail::TextForwarderSink sink(*this);
-    TextStream chainedStream(sink);
-    log11_detail::try_typeinfo_textstream_write<std::decay_t<T>>::f(
+    TextStream chainedStream(sink, m_scratchPad);
+    log11_detail::try_typeinfo_textstream_format<std::decay_t<T>>::f(
         chainedStream, std::forward<T>(value), std::true_type());
+}
 
+template <typename... TArgs>
+TextStream& TextStream::format(const char* fmt, TArgs&&... args)
+{
+    using namespace std;
+
+    doFormat(SplitStringView{fmt, strlen(fmt), nullptr, 0},
+             log11_detail::ArgumentForwarder<TArgs&&...>(
+                 *this, std::forward<TArgs>(args)...));
     return *this;
 }
 
 template <typename... TArgs>
-TextStream& TextStream::write(const char* fmt, TArgs&&... args)
+void TextStream::doFormat(SplitStringView str,
+                          log11_detail::ArgumentForwarder<TArgs...>&& args)
 {
-    unsigned argCounter = 0;
-    const char* marker = fmt;
-    for (; *fmt; ++fmt)
+    using namespace std;
+
+    const char* iter = str.begin1;
+    const char* marker = str.begin1;
+    const char* end = str.begin1 + str.length1;
+    for (;; ++iter)
     {
-        if (*fmt != '{')
+        // Loop to the start of the format specifier (or the end of the string).
+        if (iter == end)
+        {
+            if (iter != marker)
+                m_sink->writeString(marker, iter - marker);
+            marker = iter = str.begin2;
+            end = str.begin2 + str.length2;
+            str.length2 = 0;
+            if (iter == end)
+                break;
+        }
+        if (*iter != '{')
             continue;
 
-        if (fmt != marker)
-            m_sink->putString(marker, fmt - marker);
+        if (iter != marker)
+            m_sink->writeString(marker, iter - marker);
 
+        m_scratchPad.clear();
         // Loop to the end of the format specifier (or the end of the string).
-        marker = ++fmt;
-        while (*fmt && *fmt != '}')
-            ++fmt;
-        if (!*fmt)
-            return *this;
+        marker = iter + 1;
+        while (*iter != '}')
+        {
+            ++iter;
+            if (iter == end)
+            {
+                if (iter != marker)
+                    m_scratchPad.push(marker, iter - marker);
+                marker = iter = str.begin2;
+                end = str.begin2 + str.length2;
+                str.length2 = 0;
+                if (iter == end)
+                    break;
+            }
+        }
+        if (iter == end)
+            break;
 
-        printArgument(argCounter++, std::move(args)...);
+        if (iter != marker)
+            m_scratchPad.push(marker, iter - marker);
 
-        marker = fmt + 1;
+        if (m_scratchPad.size())
+        {
+            m_scratchPad.push('\0');
+            m_format.parse(m_scratchPad.data());
+        }
+
+        args.printNext();
+
+        marker = iter + 1;
     }
-    if (fmt != marker)
-        m_sink->putString(marker, fmt - marker);
+    if (iter != marker)
+        m_sink->writeString(marker, iter - marker);
 
-    // TODO: Is this a good idea?
-    while (argCounter < sizeof...(TArgs))
-    {
-        m_sink->putString(" <", 2);
-        printArgument(argCounter++, std::move(args)...);
-        m_sink->putChar('>');
-    }
-
-    return *this;
-}
-
-template <typename TArg, typename... TArgs>
-void TextStream::printArgument(unsigned index, TArg&& arg, TArgs&&... args)
-{
-    if (index == 0)
-        *this << std::move(arg);
-    else
-        printArgument(index - 1, std::move(args)...);
+    args.printRest();
 }
 
 } // namespace log11

@@ -1,4 +1,7 @@
 /*******************************************************************************
+  log11
+  https://github.com/ombre5733/log11
+
   Copyright (c) 2016, Manuel Freiberger
   All rights reserved.
 
@@ -46,7 +49,7 @@ class BinaryStream;
 class SplitStringView;
 
 template <typename T>
-struct TypeInfo;
+struct TypeTraits;
 
 
 namespace log11_detail
@@ -64,11 +67,11 @@ template <typename T>
 struct NoTypeTagGetterDefined;
 
 template <typename T>
-struct try_get_typetag_from_typeinfo
+struct try_get_typetag_from_typetraits
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(log11::TypeInfo<U>::typeTag(), std::true_type());
+        -> decltype(log11::TypeTraits<U>::typeTag(), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
@@ -79,7 +82,7 @@ struct try_get_typetag_from_typeinfo
     static
     std::uint32_t get(can_call)
     {
-        return log11::TypeInfo<T>::typeTag();
+        return log11::TypeTraits<T>::typeTag();
     }
 
     template <typename U>
@@ -94,16 +97,16 @@ struct try_get_typetag_from_typeinfo
 
 //! This dummy class has no implementation. It is used to signal that a
 //! user-defined type lacks a proper stream output function because
-//! log11::TypeInfo<T> is undefined.
+//! log11::TypeTraits<T> is undefined.
 template <typename T>
 struct NoBinaryStreamOutputFunctionDefined;
 
 template <typename T>
-struct try_typeinfo_binarystream_write
+struct try_typetraits_binarystream_write
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(log11::TypeInfo<U>::write(std::declval<log11::BinaryStream&>(), std::declval<U&>()), std::true_type());
+        -> decltype(log11::TypeTraits<U>::write(std::declval<log11::BinaryStream&>(), std::declval<U&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
@@ -114,7 +117,7 @@ struct try_typeinfo_binarystream_write
     static
     void f(log11::BinaryStream& stream, U&& value, can_call)
     {
-        log11::TypeInfo<T>::write(stream, std::forward<U>(value));
+        log11::TypeTraits<T>::write(stream, std::forward<U>(value));
     }
 
     template <typename U>
@@ -182,10 +185,10 @@ public:
                      && std::is_class<std::decay_t<T>>::value>
     write(T&& value)
     {
-        std::uint32_t tag = log11_detail::try_get_typetag_from_typeinfo<
+        std::uint32_t tag = log11_detail::try_get_typetag_from_typetraits<
                 std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
         m_sink->beginStruct(tag);
-        log11_detail::try_typeinfo_binarystream_write<std::decay_t<T>>::f(
+        log11_detail::try_typetraits_binarystream_write<std::decay_t<T>>::f(
             *this, std::forward<T>(value), std::true_type());
         m_sink->endStruct(tag);
     }
@@ -198,7 +201,7 @@ public:
                      && std::is_enum<std::decay_t<T>>::value>
     write(T&& value)
     {
-        std::uint32_t tag = log11_detail::try_get_typetag_from_typeinfo<
+        std::uint32_t tag = log11_detail::try_get_typetag_from_typetraits<
                 std::decay_t<T>>::template get<std::decay_t<T>>(std::true_type());
         m_sink->writeEnum(tag, static_cast<std::int64_t>(value));
     }

@@ -1,4 +1,7 @@
 /*******************************************************************************
+  log11
+  https://github.com/ombre5733/log11
+
   Copyright (c) 2016, Manuel Freiberger
   All rights reserved.
 
@@ -24,8 +27,8 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_TYPEINFO_HPP
-#define LOG11_TYPEINFO_HPP
+#ifndef IO11_IO11_HPP
+#define IO11_IO11_HPP
 
 #include <cstdint>
 #include <type_traits>
@@ -35,7 +38,7 @@ namespace log11
 {
 
 template <typename T>
-struct TypeInfo;
+struct TypeTraits;
 
 //! The first tag, which can be used for a user-defined type.
 //! All user defined tags must be in the range
@@ -47,31 +50,12 @@ static constexpr std::uint32_t user_defined_type_tag_begin = 1024;
 //! <tt>user_defined_type_tag_begin <= tag < user_defined_type_tag_end</tt>.
 static constexpr std::uint32_t user_defined_type_tag_end = 4096;
 
-//! \brief A traits class to make enum behave like integers.
-//!
-//! A specialization TreatAsInteger<E> must derive from <tt>std::true_type</tt>
-//! in order to enable automatic enum to integer conversion.
-template <typename T>
-struct TreatAsInteger : public std::false_type
-{
-};
-
-//! Makes the enum \p e behave like an integer when passed to the logger.
-#define LOG11_TREAT_ENUM_AS_INTEGER(e)                                         \
-    namespace log11                                                            \
-    {                                                                          \
-        template <>                                                            \
-        struct TreatAsInteger<e> : public std::true_type                       \
-        {                                                                      \
-        };                                                                     \
-    }
-
 //! Automatically create a serializer for the given \p type.
 #define IO11_AUTO_SERIALIZE(type)                                              \
-    namespace log11                                                            \
+    namespace log11                                                             \
     {                                                                          \
     template <>                                                                \
-    struct TypeInfo<type>                                                      \
+    struct TypeTraits<type>                                                    \
     {                                                                          \
         static                                                                 \
         std::uint32_t typeTag();                                               \
@@ -89,4 +73,4 @@ struct _io11_AutoSerialize
 
 } // namespace log11
 
-#endif // LOG11_TYPEINFO_HPP
+#endif // IO11_IO11_HPP

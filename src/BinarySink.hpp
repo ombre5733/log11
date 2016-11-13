@@ -1,4 +1,7 @@
 /*******************************************************************************
+  log11
+  https://github.com/ombre5733/log11
+
   Copyright (c) 2016, Manuel Freiberger
   All rights reserved.
 
@@ -77,7 +80,7 @@ namespace log11
 //                       10 ... long double
 //                       16 ... void* (3 byte)
 //                       17 ... void* (4 byte)
-//                       18 ... char* (8 byte)
+//                       18 ... void* (8 byte)
 //                       20 ... char* (3 byte)
 //                       21 ... char* (4 byte)
 //                       22 ... char* (8 byte)

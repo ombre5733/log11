@@ -1,4 +1,7 @@
 /*******************************************************************************
+  log11
+  https://github.com/ombre5733/log11
+
   Copyright (c) 2016, Manuel Freiberger
   All rights reserved.
 
@@ -28,7 +31,7 @@
 #define LOG11_UTILITY_HPP
 
 #include "Config.hpp"
-#include "TypeInfo.hpp"
+#include "TypeTraits.hpp"
 
 #include <atomic>
 #include <cstddef>

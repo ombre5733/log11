@@ -27,40 +27,37 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef LOG11_CONFIG_HPP
-#define LOG11_CONFIG_HPP
+#ifndef LOG11_TYPETRAITS_HPP
+#define LOG11_TYPETRAITS_HPP
 
-// If the macro LOG11_USER_CONFIG is set, it points to the user's
-// configuration file. If the macro is not set, we assume that the
-// user configuration is somewhere in the path.
-#if defined(LOG11_USER_CONFIG)
-    #include LOG11_USER_CONFIG
-#else
-    #include "log11_user_config.hpp"
-#endif // LOG11_USER_CONFIG
+#include "io11.hpp"
 
-// Check the version of the user configuration file.
-#if LOG11_USER_CONFIG_VERSION != 1
-    #error "Version 1 of the log11 user configuration is required."
-#endif // LOG11_USER_CONFIG_VERSION
+#include <cstdint>
+#include <type_traits>
 
-// ----=====================================================================----
-//     frem-gen
-// ----=====================================================================----
 
-#if defined(FREM_GEN_RUN)
-    #undef LOG11_USE_WEOS
-#endif
+namespace log11
+{
 
-// ----=====================================================================----
-//     WEOS integration
-// ----=====================================================================----
+//! \brief A traits class to make enum behave like integers.
+//!
+//! A specialization TreatAsInteger<E> must derive from <tt>std::true_type</tt>
+//! in order to enable automatic enum to integer conversion.
+template <typename T>
+struct TreatAsInteger : public std::false_type
+{
+};
 
-#ifdef LOG11_USE_WEOS
-    #define LOG11_EXCEPTION(x)   WEOS_EXCEPTION(x)
-#else
-    #define LOG11_EXCEPTION(x)   x
-#endif // LOG11_USE_WEOS
+//! Makes the enum \p e behave like an integer when passed to the logger.
+#define LOG11_TREAT_ENUM_AS_INTEGER(e)                                         \
+    namespace log11                                                            \
+    {                                                                          \
+        template <>                                                            \
+        struct TreatAsInteger<e> : public std::true_type                       \
+        {                                                                      \
+        };                                                                     \
+    }
 
-#endif // LOG11_CONFIG_HPP
+} // namespace log11
 
+#endif // LOG11_TYPETRAITS_HPP

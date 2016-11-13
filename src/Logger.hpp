@@ -1,4 +1,7 @@
 /*******************************************************************************
+  log11
+  https://github.com/ombre5733/log11
+
   Copyright (c) 2016, Manuel Freiberger
   All rights reserved.
 
@@ -31,7 +34,7 @@
 #include "LogBuffer.hpp"
 #include "LogCore.hpp"
 #include "Severity.hpp"
-#include "TypeInfo.hpp"
+#include "TypeTraits.hpp"
 #include "Utility.hpp"
 
 #ifdef LOG11_USE_WEOS

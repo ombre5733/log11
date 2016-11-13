@@ -1,4 +1,7 @@
 /*******************************************************************************
+  log11
+  https://github.com/ombre5733/log11
+
   Copyright (c) 2016, Manuel Freiberger
   All rights reserved.
 
@@ -48,7 +51,7 @@ class SplitStringView;
 class TextStream;
 
 template <typename T>
-struct TypeInfo;
+struct TypeTraits;
 
 namespace log11_detail
 {
@@ -117,11 +120,11 @@ struct try_member_textstream_format
 };
 
 template <typename T>
-struct try_typeinfo_textstream_format
+struct try_typetraits_textstream_format
 {
     template <typename U>
     static constexpr auto test(U*)
-        -> decltype(log11::TypeInfo<U>::format(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
+        -> decltype(log11::TypeTraits<U>::format(std::declval<log11::TextStream&>(), std::declval<U&>()), std::true_type());
 
     template <typename U>
     static constexpr std::false_type test(...);
@@ -132,7 +135,7 @@ struct try_typeinfo_textstream_format
     static
     void f(log11::TextStream& stream, U&& value, can_call)
     {
-        log11::TypeInfo<T>::format(stream, std::forward<U>(value));
+        log11::TypeTraits<T>::format(stream, std::forward<U>(value));
     }
 
     template <typename U>
@@ -396,7 +399,7 @@ void TextStream::write(T&& value)
 
     log11_detail::TextForwarderSink sink(*this);
     TextStream chainedStream(sink, m_scratchPad);
-    log11_detail::try_typeinfo_textstream_format<std::decay_t<T>>::f(
+    log11_detail::try_typetraits_textstream_format<std::decay_t<T>>::f(
         chainedStream, std::forward<T>(value), std::true_type());
 }
 
